@@ -155,17 +155,15 @@ Bot ishga tushdi (long polling).
 Agar shu ishlasa — bot to'liq tayyor. 🎉
 
 ### Admin panelni tekshirish
-Botda **🛠 Admin panel** tugmasi (faqat sizda ko'rinadi):
-- **🤖 AI provayder** — Anthropic / OpenAI / Ikkalasi (zaxirali) ni tanlash
-- To'lov usullarini yoqish/o'chirish
-- Narxni o'zgartirish (format: `0 5000`)
-- Karta raqamini o'zgartirish
-- So'nggi buyurtmalarni ko'rish
+Botda **🛠 Admin panel** tugmasi (faqat adminlarda ko'rinadi):
+- **📊 Buyurtmalar** — ✅ tasdiqlangan / ⏳ tasdiqlanmagan / 📋 hammasi
+- **💳 To'lov usullari** — Karta / Click / Payme yoqish-o'chirish
+- **🤖 AI provayder** — Anthropic / OpenAI / Ikkalasi (zaxirali)
+- **💰 Narx** va **💳 Karta** — o'zgartirish
+- **🎁 Bepul foydalanuvchilar** — ID bo'yicha qo'shish/o'chirish (ular to'lovsiz ishlaydi)
+- **👥 Adminlar** (faqat bosh admin) — yangi admin qo'shish/o'chirish
 
-> **AI provayder rejimlari:**
-> • *Faqat Anthropic* — hammasi Claude bilan.
-> • *Faqat OpenAI* — hammasi GPT bilan.
-> • *Ikkalasi* — avval Anthropic, agar u xato bersa (server band va h.k.) avtomatik OpenAI'ga o'tadi. Eng ishonchli variant, lekin ikkala kalit ham kerak.
+> Bosh adminlar = `ADMIN_IDS` dagi shaxslar (o'chirib bo'lmaydi). Ular yangi adminlar va bepul foydalanuvchilarni boshqaradi. Adminlar va bepul foydalanuvchilar avtomatik to'lovsiz taqdimot yaratadi.
 
 ---
 
@@ -206,6 +204,21 @@ Buni faqat **merchant hisobingiz** bo'lsa qiling. Avval manual bilan ishlab turi
 So'ng botdagi 🛠 Admin panel'dan Click/Payme'ni yoqib qo'ying.
 
 ---
+
+## 4.5-QISM. (Ixtiyoriy) Yetkazish kanali + kesh
+
+Tayyor taqdimotlarni alohida kanalga saqlash va bir xil so'rovlarni keshdan tez berish uchun:
+
+1. Telegramda yangi **kanal** yarating (masalan "SlidePro Arxiv").
+2. Botingizni (`@Slide777`) o'sha kanalga **administrator** qilib qo'shing (post yuborish huquqi bilan).
+3. Kanal ID'sini oling: kanalga biror post yuboring, uni `@username_to_id_bot` yoki shунга o'xshash botga forward qiling. ID `-100...` bilan boshlanadi. (Yoki communal kanal bo'lsa `@kanalusername` ham bo'ladi.)
+4. Railway Variables'ga qo'shing:
+   ```
+   DELIVERY_CHANNEL_ID=-1001234567890
+   ```
+5. Redeploy. Endi har bir tayyor fayl kanalga ham yuboriladi. Bir xil mavzu + slayd soni qayta so'ralsa, bot uni qaytadan yaratmasdan keshdan darhol yuboradi (API tejaladi).
+
+> Kanal ixtiyoriy — `DELIVERY_CHANNEL_ID` bo'sh bo'lsa, bot oddiy ishlaydi (faqat foydalanuvchiga yuboradi, kesh ishlamaydi).
 
 ## 5-QISM. Muammolarni hal qilish (troubleshooting)
 

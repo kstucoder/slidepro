@@ -10,7 +10,9 @@ Foydalanuvchi mavzu beradi (ixtiyoriy: o'z kontentini yuklaydi), sahifa sonini t
 - 📎 Kontent: foydalanuvchi `.docx`/`.txt`/`.pdf` yoki matn yuborsa — slaydlar shunga asoslanadi; aks holda AI o'zi yozadi
 - 💳 To'lov: **manual** (karta + chek → admin tasdiq) va **avtomatik** (Click, Payme)
 - 🤖 AI provayder: Anthropic (Claude), OpenAI (GPT), yoki ikkalasi (zaxirali failover) — admin tanlaydi
-- 🛠 Admin panel: AI provayder va to'lov usullarini yoqish/o'chirish, narx va karta raqamini o'zgartirish, buyurtmalarni ko'rish
+- 🗂 Kesh + kanal: tayyor fayllar maxsus kanalga yuboriladi; bir xil mavzu+slayd qayta so'ralsa qaytadan yaratilmaydi, keshdan tezkor beriladi
+- 🛠 Professional admin panel: buyurtmalar (tasdiqlangan/tasdiqlanmagan), adminlar ro'yxati, bepul foydalanuvchilar, AI provayder, to'lov usullari, narx, karta
+- 🎁 Bepul foydalanuvchilar: admin ro'yxatga olgan shaxslar to'lovsiz taqdimot yaratadi, narx va karta raqamini o'zgartirish, buyurtmalarni ko'rish
 - 🗄 SQLite — foydalanuvchilar, buyurtmalar, sozlamalar saqlanadi
 
 ## Foydalanuvchi oqimi

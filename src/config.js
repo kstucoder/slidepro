@@ -26,6 +26,9 @@ const config = {
   port: intEnv("PORT", 3000),
   publicUrl: process.env.PUBLIC_URL || "", // masalan https://myapp.up.railway.app
 
+  // Tayyor fayllar yuboriladigan kanal (kesh uchun ham). Mas: -1001234567890 yoki @kanal
+  deliveryChannelId: process.env.DELIVERY_CHANNEL_ID || "",
+
   // DB yo'li (Railway/Render'da volume ulang)
   dbPath: process.env.DB_PATH || "./data/bot.sqlite",
 

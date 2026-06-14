@@ -36,11 +36,37 @@ CREATE TABLE IF NOT EXISTS orders (
   status TEXT,
   payment_method TEXT,
   provider_tx TEXT,
+  file_id TEXT,
   file_path TEXT,
   created_at INTEGER,
   paid_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS admins (
+  tg_id INTEGER PRIMARY KEY,
+  username TEXT,
+  added_by INTEGER,
+  created_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS free_users (
+  tg_id INTEGER PRIMARY KEY,
+  username TEXT,
+  granted_by INTEGER,
+  created_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS cache (
+  cache_key TEXT PRIMARY KEY,
+  file_id TEXT,
+  topic TEXT,
+  slides INTEGER,
+  channel_msg_id INTEGER,
+  created_at INTEGER
+);
 `);
+
+// eski bazaga file_id ustunini qo'shish (migratsiya)
+try { db.prepare("SELECT file_id FROM orders LIMIT 1").get(); }
+catch (e) { try { db.exec("ALTER TABLE orders ADD COLUMN file_id TEXT"); } catch (_) {} }
+
 
 // ---- settings ----
 function getSetting(key, def = null) {
@@ -102,9 +128,44 @@ function listRecentOrders(limit = 20) {
 function findOrderByProviderTx(tx) {
   return db.prepare("SELECT * FROM orders WHERE provider_tx = ?").get(tx);
 }
+// status bo'yicha buyurtmalar (tasdiqlangan / tasdiqlanmagan ajratish uchun)
+function listOrdersByStatuses(statuses, limit = 20) {
+  const ph = statuses.map(() => "?").join(",");
+  return db.prepare(`SELECT * FROM orders WHERE status IN (${ph}) ORDER BY id DESC LIMIT ?`).all(...statuses, limit);
+}
+
+// ---- admins (env'dan tashqari, dinamik) ----
+function addAdmin(tgId, username, addedBy) {
+  db.prepare("INSERT INTO admins(tg_id,username,added_by,created_at) VALUES(?,?,?,?) ON CONFLICT(tg_id) DO UPDATE SET username=excluded.username")
+    .run(tgId, username || "", addedBy || null, Date.now());
+}
+function removeAdmin(tgId) { db.prepare("DELETE FROM admins WHERE tg_id = ?").run(tgId); }
+function isDbAdmin(tgId) { return !!db.prepare("SELECT 1 FROM admins WHERE tg_id = ?").get(tgId); }
+function listAdmins() { return db.prepare("SELECT * FROM admins ORDER BY created_at DESC").all(); }
+
+// ---- bepul foydalanuvchilar ----
+function addFreeUser(tgId, username, grantedBy) {
+  db.prepare("INSERT INTO free_users(tg_id,username,granted_by,created_at) VALUES(?,?,?,?) ON CONFLICT(tg_id) DO UPDATE SET username=excluded.username")
+    .run(tgId, username || "", grantedBy || null, Date.now());
+}
+function removeFreeUser(tgId) { db.prepare("DELETE FROM free_users WHERE tg_id = ?").run(tgId); }
+function isFreeUser(tgId) { return !!db.prepare("SELECT 1 FROM free_users WHERE tg_id = ?").get(tgId); }
+function listFreeUsers() { return db.prepare("SELECT * FROM free_users ORDER BY created_at DESC").all(); }
+
+// ---- kesh (bir xil taqdimotni qayta yaratmaslik) ----
+function getCache(key) { return db.prepare("SELECT * FROM cache WHERE cache_key = ?").get(key); }
+function setCache(key, fileId, topic, slides, channelMsgId) {
+  db.prepare(`INSERT INTO cache(cache_key,file_id,topic,slides,channel_msg_id,created_at)
+    VALUES(?,?,?,?,?,?) ON CONFLICT(cache_key) DO UPDATE SET file_id=excluded.file_id, channel_msg_id=excluded.channel_msg_id, created_at=excluded.created_at`)
+    .run(key, fileId, topic, slides, channelMsgId || null, Date.now());
+}
+function deleteCache(key) { db.prepare("DELETE FROM cache WHERE cache_key = ?").run(key); }
 
 module.exports = {
   db, getSetting, setSetting, getAllSettings, seedDefaults,
   upsertUser, createOrder, getOrder, updateOrder,
-  listOrdersByUser, listRecentOrders, findOrderByProviderTx,
+  listOrdersByUser, listRecentOrders, findOrderByProviderTx, listOrdersByStatuses,
+  addAdmin, removeAdmin, isDbAdmin, listAdmins,
+  addFreeUser, removeFreeUser, isFreeUser, listFreeUsers,
+  getCache, setCache, deleteCache,
 };
