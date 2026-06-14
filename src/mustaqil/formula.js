@@ -29,21 +29,35 @@ async function initMathJax() {
 async function renderFormula(latex, display = true) {
   try {
     const { doc, adaptor } = await initMathJax();
-    const node = doc.convert(latex, { display, em: 18, ex: 9, containerWidth: 800 });
+    const node = doc.convert(latex, { display, em: 14, ex: 7, containerWidth: 600 });
     let svg = adaptor.outerHTML(node);
 
-    // sharp uchun to'g'ri o'lchamlar
-    if (!svg.includes('xmlns=')) {
-      svg = svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
-    }
-    // oq fon
-    svg = svg.replace("<svg", '<svg style="background:white"');
+    // <mjx-container> tashqi tegini olib tashlash, faqat <svg>...</svg> qoldirish
+    const svgMatch = svg.match(/<svg[\s\S]*<\/svg>/i);
+    if (svgMatch) svg = svgMatch[0];
 
+    // xmlns kafolati
+    if (!/xmlns=/.test(svg)) {
+      svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+    }
+
+    // SVG'ning haqiqiy nisbatini olish (ex birlikda width/height)
+    let ratio = 5; // standart: keng/baland
+    const wMatch = svg.match(/width="([\d.]+)ex"/i);
+    const hMatch = svg.match(/height="([\d.]+)ex"/i);
+    if (wMatch && hMatch && parseFloat(hMatch[1]) > 0) {
+      ratio = parseFloat(wMatch[1]) / parseFloat(hMatch[1]);
+    }
+
+    // Balandlikni 44px ga belgilaymiz (matn qatori bilan mutanosib), kenglik nisbatga qarab
+    const targetH = 44;
+    const targetW = Math.round(targetH * ratio);
     const buf = await sharp(Buffer.from(svg))
+      .resize({ height: Math.round(targetH * 2.2), fit: "inside" }) // yuqori DPI uchun 2.2x
       .flatten({ background: { r: 255, g: 255, b: 255 } })
       .png()
       .toBuffer();
-    return buf;
+    return { buf, width: targetW, height: targetH };
   } catch (e) {
     console.error("[formula] MathJax xato:", e.message, "| latex:", latex.slice(0, 50));
     return fallbackFormula(latex);
@@ -67,14 +81,15 @@ async function fallbackFormula(latex) {
     .replace(/[{}\\]/g, "")
     .trim();
 
-  const W = Math.max(300, text.length * 12 + 40);
-  const H = 60;
+  const W = Math.max(220, text.length * 9 + 30);
+  const H = 44;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
     <rect width="${W}" height="${H}" fill="white"/>
     <text x="${W/2}" y="${H/2+6}" text-anchor="middle" font-family="Times New Roman,serif"
-          font-size="22" font-style="italic" fill="#111">${escSvg(text)}</text>
+          font-size="18" font-style="italic" fill="#111">${escSvg(text)}</text>
   </svg>`;
-  return sharp(Buffer.from(svg)).png().toBuffer();
+  const buf = await sharp(Buffer.from(svg)).png().toBuffer();
+  return { buf, width: W, height: H };
 }
 
 function escSvg(s) {

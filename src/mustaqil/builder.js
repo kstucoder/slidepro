@@ -96,12 +96,16 @@ function captionPara(text) {
   });
 }
 
-function imageBlock(imgBuf, w, h, caption) {
+function imageBlock(media, caption) {
+  // media = { buf, width, height }  yoki eski format (buffer)
+  const buf = media.buf || media;
+  const w = media.width || 440;
+  const h = media.height || 200;
   const blocks = [];
   blocks.push(new Paragraph({
     children: [new ImageRun({
-      data: imgBuf,
-      transformation: { width: w || 500, height: h || 300 },
+      data: buf,
+      transformation: { width: w, height: h },
       type: "png",
     })],
     spacing: { before: mm(3), after: mm(1) },
@@ -261,9 +265,9 @@ function buildChapterContent(chapter, pngCache) {
         break;
       case "formula": {
         const key = "f_" + item.number;
-        const imgBuf = pngCache && pngCache.get(key);
-        if (imgBuf) {
-          nodes.push(...imageBlock(imgBuf, 380, null,
+        const media = pngCache && pngCache.get(key);
+        if (media) {
+          nodes.push(...imageBlock(media,
             item.caption ? `(${item.number || ""}-formula. ${item.caption})` : `(${item.number || ""}-formula)`));
         } else {
           // zaxira: matn sifatida
@@ -279,9 +283,9 @@ function buildChapterContent(chapter, pngCache) {
       }
       case "chart": {
         const key = "c_" + item.number;
-        const imgBuf = pngCache && pngCache.get(key);
-        if (imgBuf) {
-          nodes.push(...imageBlock(imgBuf, 500, 300,
+        const media = pngCache && pngCache.get(key);
+        if (media) {
+          nodes.push(...imageBlock(media,
             item.caption || `${item.number || ""}-rasm. ${item.title || ""}`));
         }
         break;
@@ -326,7 +330,7 @@ async function buildDocument(fullSpec, pngCache) {
   const refNodes = [pageBreak(), ...buildReferences(references)];
 
   const footerPara = new Paragraph({
-    children: [new PageNumber()],
+    children: [new TextRun({ children: [PageNumber.CURRENT], font: FONT, size: 24 })],
     alignment: AlignmentType.CENTER,
     indent: undefined,
   });

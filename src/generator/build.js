@@ -68,6 +68,19 @@ async function generatePresentation({ topic, slides, sourceContent, extra, palet
   if (!spec.slides || !Array.isArray(spec.slides) || spec.slides.length === 0) {
     throw new Error("Yaroqsiz spec: 'slides' massivi topilmadi.");
   }
+
+  // Titul slaydiga joriy yil va talaba ma'lumotlarini majburiy o'rnatish
+  const titleSlide = spec.slides.find((s) => s.layout === "title");
+  if (titleSlide) {
+    titleSlide.date = String(new Date().getFullYear()); // joriy yil (LLM eski yil qo'yishi mumkin)
+    if (studentName || studentGroup) {
+      const meta = [];
+      if (studentName) meta.push({ label: "Bajardi:", value: studentName });
+      if (studentGroup) meta.push({ label: "Guruh:", value: studentGroup });
+      titleSlide.meta = meta;
+    }
+  }
+
   await buildPresentation(spec, outFile);
   return { outFile, slideCount: spec.slides.length, palette: spec.palette || "ocean", usedProvider };
 }

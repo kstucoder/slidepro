@@ -105,15 +105,19 @@ function pieSVG({ labels=[], values=[], title="" }) {
 // Universal chart renderer
 async function renderChart({ chartType, labels, values, title, unit, caption }) {
   const type = (chartType || "bar").toLowerCase();
-  let svg;
-  if (type === "line") svg = lineSVG({ labels, values, title: title || caption || "", unit });
-  else if (type === "pie") svg = pieSVG({ labels, values, title: title || caption || "" });
-  else svg = barSVG({ labels, values, title: title || caption || "", unit });
+  let svg, w, h;
+  if (type === "line") { svg = lineSVG({ labels, values, title: title || caption || "", unit }); w = 600; h = 320; }
+  else if (type === "pie") { svg = pieSVG({ labels, values, title: title || caption || "" }); w = 580; h = 300; }
+  else { svg = barSVG({ labels, values, title: title || caption || "", unit }); w = 600; h = 360; }
 
-  return sharp(Buffer.from(svg))
+  const buf = await sharp(Buffer.from(svg))
     .flatten({ background: { r: 255, g: 255, b: 255 } })
     .png()
     .toBuffer();
+  // docx uchun ko'rsatish o'lchami: kenglik 440px, balandlik nisbatga qarab
+  const dispW = 440;
+  const dispH = Math.round(dispW * h / w);
+  return { buf, width: dispW, height: dispH };
 }
 
 module.exports = { renderChart };

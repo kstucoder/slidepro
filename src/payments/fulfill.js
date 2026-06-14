@@ -73,7 +73,9 @@ async function fulfillOrder(orderId) {
       res.slideCount = order.pages || 15;
     } else {
       res = await generatePresentation({ topic: order.topic, slides: order.slides,
-        sourceContent: order.content_text || "", llm: llmCfg, outFile });
+        sourceContent: order.content_text || "",
+        studentName: order.student_name || "", studentGroup: order.student_group || "",
+        llm: llmCfg, outFile });
     }
 
     const caption = isMustaqil
