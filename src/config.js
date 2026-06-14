@@ -43,7 +43,9 @@ const config = {
     click_enabled: process.env.CLICK_ENABLED === "true" ? "1" : "0",
     payme_enabled: process.env.PAYME_ENABLED === "true" ? "1" : "0",
     // LLM provayder: "anthropic" | "openai" | "both"
-    llm_provider: (["anthropic", "openai", "both"].includes(process.env.LLM_PROVIDER) ? process.env.LLM_PROVIDER : "anthropic"),
+    llm_provider: (["anthropic","openai","both"].includes(process.env.LLM_PROVIDER) ? process.env.LLM_PROVIDER : "anthropic"),
+    // Mustaqil ish uchun alohida LLM (bo'sh = taqdimot bilan bir xil)
+    mustaqil_llm_provider: process.env.MUSTAQIL_LLM_PROVIDER || "",
   },
 
   // Click merchant (avtomatik to'lov)
@@ -61,9 +63,17 @@ const config = {
     checkoutUrl: process.env.PAYME_CHECKOUT_URL || "https://checkout.paycom.uz",
   },
 
+  // Mustaqil ish uchun alohida LLM provayder
+  mustaqilLlmProvider: (["anthropic","openai","both"].includes(process.env.MUSTAQIL_LLM_PROVIDER)
+    ? process.env.MUSTAQIL_LLM_PROVIDER : null), // null = taqdimot bilan bir xil
+
   // Slayd soni chegaralari
   minSlides: intEnv("MIN_SLIDES", 6),
   maxSlides: intEnv("MAX_SLIDES", 20),
+
+  // Mustaqil ish sahifa chegaralari
+  minPages: intEnv("MIN_PAGES", 10),
+  maxPages: intEnv("MAX_PAGES", 40),
 };
 
 function assertConfig() {

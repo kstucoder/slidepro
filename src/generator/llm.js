@@ -38,7 +38,7 @@ function ensureStructure(spec, topic) {
   if (ti > 0) slides.unshift(slides.splice(ti, 1)[0]);
   else if (ti === -1) slides.unshift({ layout: "title", title: topic || "Taqdimot", meta: [] });
 
-  // 2) ADABIYOTLAR — oxirgi bo'lsin (mavjud bo'lsa ko'chiramiz; bo'lmasa yaratamiz)
+  // 2) ADABIYOTLAR — oxirgi bo'lsin
   let ri = slides.findIndex((s) => s.layout === "references");
   if (ri !== -1 && ri !== slides.length - 1) slides.push(slides.splice(ri, 1)[0]);
   else if (ri === -1) {
@@ -55,7 +55,7 @@ function ensureStructure(spec, topic) {
     });
   }
 
-  // 3) XULOSA — adabiyotlardan oldin bo'lsin (mavjud bo'lsa)
+  // 3) XULOSA — adabiyotlardan oldin bo'lsin
   let ci = slides.findIndex((s) => s.layout === "conclusion");
   if (ci !== -1) {
     const refIdx = slides.findIndex((s) => s.layout === "references");
@@ -66,7 +66,7 @@ function ensureStructure(spec, topic) {
     }
   }
 
-  // 4) REJA (agenda) — ikkinchi bo'lsin; bo'lmasa mazmun slaydlaridan yasaymiz
+  // 4) REJA (agenda) — ikkinchi bo'lsin
   let ai = slides.findIndex((s) => s.layout === "agenda");
   if (ai === -1) {
     const skip = new Set(["title", "agenda", "conclusion", "references"]);
@@ -76,15 +76,58 @@ function ensureStructure(spec, topic) {
     slides.splice(1, 0, slides.splice(ai, 1)[0]);
   }
 
+  // 5) KETMA-KET DUBLIKATLARNI SINDIRISH
+  // Mazmun slaydlarini qayta tartiblaymiz — ma'lumot o'zgarmaydi
+  slides = breakConsecutiveDuplicates(slides);
+
   spec.slides = slides;
   return spec;
 }
 
+// Mazmun slaydlari orasida ketma-ket bir xil layoutni oldini olish.
+// Tartibni almashtiramiz (mazmun o'zgarmaydi, faqat joylashuv).
+function breakConsecutiveDuplicates(slides) {
+  const SKIP = new Set(["title", "agenda", "conclusion", "references"]);
+  const result = [...slides];
+  let changed = true;
+  let pass = 0;
+  while (changed && pass < 12) {
+    changed = false; pass++;
+    for (let i = 0; i < result.length - 1; i++) {
+      if (SKIP.has(result[i].layout) || SKIP.has(result[i + 1].layout)) continue;
+      if (result[i].layout !== result[i + 1].layout) continue;
+      // Keyingi boshqa layoutli content slaydini topib almashtirish
+      let swapped = false;
+      for (let j = i + 2; j < result.length; j++) {
+        if (SKIP.has(result[j].layout)) continue;
+        if (result[j].layout !== result[i].layout) {
+          [result[i + 1], result[j]] = [result[j], result[i + 1]];
+          changed = true; swapped = true; break;
+        }
+      }
+      // agar almashtirib bo'lmasa — oldingi bilan almashtirish urin
+      if (!swapped && i > 0 && !SKIP.has(result[i - 1].layout) && result[i - 1].layout !== result[i + 1].layout) {
+        [result[i], result[i + 1]] = [result[i + 1], result[i]];
+        changed = true;
+      }
+    }
+  }
+  // Qolgan dublikatlarni loglash (hammasi bir xil layout bo'lsa — API qayta urinishi kerak)
+  let remaining = 0;
+  for (let i = 0; i < result.length - 1; i++) {
+    if (!SKIP.has(result[i].layout) && result[i].layout === result[i+1].layout) remaining++;
+  }
+  if (remaining > 0) {
+    console.warn("[llm] ensureStructure: " + remaining + " ta ketma-ket dublikat qoldi (layout xilma-xillik yetarli emas)");
+  }
+  return result;
+}
+
 // asosiy funksiya
-async function generateSpec({ topic, slides, sourceContent, extra, provider, anthropicKey, anthropicModel, openaiKey, openaiModel }) {
+async function generateSpec({ topic, slides, sourceContent, extra, studentName, studentGroup, provider, anthropicKey, anthropicModel, openaiKey, openaiModel }) {
   const prompts = {
     system: buildSystemPrompt(),
-    user: buildUserPrompt({ topic, slides, extra, sourceContent }),
+    user: buildUserPrompt({ topic, slides, extra, sourceContent, studentName, studentGroup }),
   };
   const cfg = { anthropicKey, anthropicModel, openaiKey, openaiModel };
 

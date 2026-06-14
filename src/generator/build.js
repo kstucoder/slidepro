@@ -55,9 +55,9 @@ async function buildPresentation(spec, outFile) {
 }
 
 // mavzu (+ ixtiyoriy kontent) -> LLM (provayder tanlovi bilan) -> spec -> .pptx
-async function generatePresentation({ topic, slides, sourceContent, extra, palette, llm, outFile }) {
+async function generatePresentation({ topic, slides, sourceContent, extra, palette, studentName, studentGroup, llm, outFile }) {
   const { spec, usedProvider } = await generateSpec({
-    topic, slides, sourceContent, extra,
+    topic, slides, sourceContent, extra, studentName, studentGroup,
     provider: (llm && llm.provider) || "anthropic",
     anthropicKey: llm && llm.anthropicKey,
     anthropicModel: (llm && llm.anthropicModel) || process.env.MODEL || "claude-sonnet-4-6",

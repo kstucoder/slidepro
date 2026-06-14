@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const { InputFile } = require("grammy");
 const { getOrder, updateOrder, getSetting, getCache, setCache } = require("../db");
 const { generatePresentation } = require("../generator/build");
+const { generateMustaqilIsh } = require("../mustaqil/generate");
 const { config } = require("../config");
 
 let _bot = null;
@@ -56,24 +57,28 @@ async function fulfillOrder(orderId) {
 
   const outDir = path.join(__dirname, "..", "..", "output");
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-  const outFile = path.join(outDir, `order_${orderId}_${slug(order.topic)}.pptx`);
+  const isMustaqil = order.work_type === "mustaqil";
+  const ext = isMustaqil ? ".docx" : ".pptx";
+  const outFile = path.join(outDir, "order_" + orderId + "_" + slug(order.topic) + ext);
+  const mustaqilProv = getSetting("mustaqil_llm_provider", "");
+  const llmProvider = (isMustaqil && mustaqilProv) ? mustaqilProv : getSetting("llm_provider", "anthropic");
+  const llmCfg = { provider: llmProvider, anthropicKey: config.anthropicApiKey, anthropicModel: config.model, openaiKey: config.openaiApiKey, openaiModel: config.openaiModel };
 
   try {
-    const res = await generatePresentation({
-      topic: order.topic,
-      slides: order.slides,
-      sourceContent: order.content_text || "",
-      llm: {
-        provider: getSetting("llm_provider", "anthropic"),
-        anthropicKey: config.anthropicApiKey,
-        anthropicModel: config.model,
-        openaiKey: config.openaiApiKey,
-        openaiModel: config.openaiModel,
-      },
-      outFile,
-    });
+    let res;
+    if (isMustaqil) {
+      res = await generateMustaqilIsh({ topic: order.topic, pages: order.pages || 15,
+        language: "o\'zbek", studentName: order.student_name || "", studentGroup: order.student_group || "",
+        org: "", supervisor: "", sourceContent: order.content_text || "", llm: llmCfg, outFile });
+      res.slideCount = order.pages || 15;
+    } else {
+      res = await generatePresentation({ topic: order.topic, slides: order.slides,
+        sourceContent: order.content_text || "", llm: llmCfg, outFile });
+    }
 
-    const caption = `🎉 Taqdimot tayyor!\n\n📌 Mavzu: ${order.topic}\n📄 Slaydlar: ${res.slideCount} ta`;
+    const caption = isMustaqil
+      ? "📄 Mustaqil ishingiz tayyor!\n\n📌 Mavzu: " + order.topic + "\n📋 Sahifalar: " + (order.pages||15) + " ta"
+      : "🎉 Taqdimot tayyor!\n\n📌 Mavzu: " + order.topic + "\n📄 Slaydlar: " + res.slideCount + " ta";
 
     // 3) KANALGA YUBORISH (kesh uchun file_id olamiz)
     let fileId = null, channelMsgId = null;

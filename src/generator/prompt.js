@@ -82,9 +82,14 @@ YAKUNIY TEKSHIRUV (JSON qaytarishdan oldin o'zingni tekshir): har bir slaydda el
 - Faqat JSON qaytar (izoh, markdown, backtick YO'Q).`;
 }
 
-function buildUserPrompt({ topic, slides, extra, sourceContent }) {
+function buildUserPrompt({ topic, slides, extra, sourceContent, studentName, studentGroup }) {
   let p = `Mavzu: "${topic}"\nSlaydlar soni: ${slides}`;
+  if (studentName) p += `\nTalaba: ${studentName}`;
+  if (studentGroup) p += `\nGuruh: ${studentGroup}`;
   if (extra) p += `\nQo'shimcha talablar: ${extra}`;
+  if (studentName || studentGroup) {
+    p += `\n\nMuhim: titul slaydning meta maydonida talaba va guruh ma'lumotlari bo'lsin:\n  meta: [{"label":"Bajardi:","value":"${studentName||'F.I.Sh.'}"},{"label":"Guruh:","value":"${studentGroup||'—'}"}]`;
+  }
   if (sourceContent && sourceContent.trim()) {
     const trimmed = sourceContent.length > 12000 ? sourceContent.slice(0, 12000) : sourceContent;
     p += `\n\nFoydalanuvchi quyidagi MANBA MATNINI berdi. Slaydlar AYNAN shu manba mazmuniga asoslansin — uni tahlil qilib, eng muhim fikrlarni slaydlarga ajrat, struktura ber va qisqartir. O'zingdan mavzuga aloqasiz ma'lumot qo'shma:\n--- MANBA BOSHLANISHI ---\n${trimmed}\n--- MANBA TUGASHI ---`;
