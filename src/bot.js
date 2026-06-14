@@ -380,13 +380,16 @@ bot.callbackQuery(/^pay:(manual|click|payme)$/, async (ctx) => {
 
   if (method === "manual") {
     ctx.session.step = "await_receipt";
+    const cardNum = db.getSetting("card_number") || "— (sozlamada karta raqami yo'q)";
+    const cardHolder = db.getSetting("card_holder") || "— (sozlamada ism yo'q)";
+    console.log(`[pay:manual] Buyurtma #${orderId} — karta: ${cardNum}, holder: ${cardHolder}`);
     await ctx.editMessageText(
       `💳 *Karta orqali to'lov*\n\n` +
       `Quyidagi kartaga *${formatAmount(d.amount)} ${currency()}* o'tkazing:\n\n` +
-      `\`${db.getSetting("card_number")}\`\n` +
-      `${db.getSetting("card_holder")}\n\n` +
+      `\`${cardNum}\`\n` +
+      `${cardHolder}\n\n` +
       `To'lovdan so'ng *chek/skrinshot* (rasm) yuboring. Administrator tasdiqlagach, taqdimot tayyorlanadi.\n\n` +
-      `Buyurtma raqami: #${orderId}`,
+      `Buyurtma raqami: *#${orderId}*`,
       { parse_mode: "Markdown" }
     );
   } else if (method === "click") {
@@ -414,23 +417,61 @@ bot.callbackQuery(/^pay:(manual|click|payme)$/, async (ctx) => {
 
 // ============ CHEK (rasm) — manual to'lov ============
 bot.on("message:photo", async (ctx) => {
-  if (ctx.session.step !== "await_receipt") return;
+  if (ctx.session.step !== "await_receipt") {
+    // Admin o'zi zakaz qilib, chek yuborayotgan bo'lishi mumkin — step qayta tekshiriladi
+    console.log(`[photo] step="${ctx.session.step}" userId=${ctx.from.id} — await_receipt emas, o'tkazib yuborildi`);
+    return;
+  }
   const orderId = ctx.session.draft.orderId;
+  if (!orderId) {
+    console.log(`[photo] orderId topilmadi — session.draft:`, JSON.stringify(ctx.session.draft));
+    return ctx.reply("Buyurtma raqami topilmadi. /start bilan qaytadan boshlang.");
+  }
   const order = db.getOrder(orderId);
   if (!order) return ctx.reply("Buyurtma topilmadi. /start bilan qaytadan boshlang.");
 
   db.updateOrder(orderId, { status: "awaiting_approval" });
   ctx.session.step = "idle";
-  await ctx.reply("✅ Chek qabul qilindi. Administrator tekshirib, tasdiqlaydi. Iltimos kuting ⏳");
 
-  // adminlarga chekni yuborish + tasdiqlash tugmalari
   const photo = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-  const cap = `🧾 *Yangi to'lov cheki*\n\nBuyurtma #${orderId}\nMavzu: ${order.topic}\nSlaydlar: ${order.slides}\nSumma: ${formatAmount(order.amount)} ${currency()}\nFoydalanuvchi: ${ctx.from.first_name} (@${ctx.from.username || "—"}, id:${ctx.from.id})`;
+  const cap =
+    `🧾 *Yangi to'lov cheki*\n\n` +
+    `Buyurtma: #${orderId}\n` +
+    `Mavzu: ${order.topic}\n` +
+    `Slaydlar: ${order.slides} ta\n` +
+    `Summa: ${formatAmount(order.amount)} ${currency()}\n` +
+    `Foydalanuvchi: ${ctx.from.first_name} (@${ctx.from.username || "—"}, id:${ctx.from.id})`;
   const kb = new InlineKeyboard()
     .text("✅ Tasdiqlash", `approve:${orderId}`)
     .text("❌ Rad etish", `reject:${orderId}`);
+
+  // Adminlarga chekni yuborish
+  const userIsAdmin = isAdmin(ctx.from.id);
+  let adminNotified = false;
+
   for (const admin of config.adminIds) {
-    try { await bot.api.sendPhoto(admin, photo, { caption: cap, parse_mode: "Markdown", reply_markup: kb }); } catch (_) {}
+    try {
+      await bot.api.sendPhoto(admin, photo, { caption: cap, parse_mode: "Markdown", reply_markup: kb });
+      adminNotified = true;
+      console.log(`[photo] Admin ${admin} ga chek yuborildi (buyurtma #${orderId})`);
+    } catch (e) {
+      console.error(`[photo] Admin ${admin} ga yuborishda XATO:`, e.message);
+    }
+  }
+
+  // Admin o'zi zakaz qilgan holat: tasdiqlash tugmalarini bevosita ko'rsatish
+  if (userIsAdmin) {
+    await ctx.reply(
+      `✅ Chek qabul qilindi.\n\nAdmin sifatida buyurtma #${orderId} ni to'g'ridan tasdiqlashingiz mumkin:`,
+      { reply_markup: kb }
+    );
+  } else {
+    await ctx.reply("✅ Chek qabul qilindi. Administrator tekshirib, tasdiqlaydi. Iltimos kuting ⏳");
+  }
+
+  // Agar hech qaysi adminga yuborib bo'lmagan bo'lsa — logga yoz
+  if (!adminNotified) {
+    console.error(`[photo] DIQQAT: Hech qaysi adminga yuborib bo'lmadi. adminIds=${JSON.stringify(config.adminIds)}`);
   }
 });
 
