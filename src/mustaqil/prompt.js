@@ -74,7 +74,7 @@ Quyidagi JSON strukturasida qaytargin:
     }
   ],
   "references": [
-    "Muallif. Kitob nomi. Nashriyot, yil.",
+    "<APA format: Muallif, A. A. (yil). Asar nomi. Nashriyot yoki Jurnal nomi, jild(son), sahifalar.",
     ...
   ]
 }
@@ -86,7 +86,12 @@ QOIDALAR:
 - word_target'lar yig'indisi ≈ ${totalWords} ga teng bo'lsin
 - Formulalar: mavzuga mos matematik ifodalar bo'lgan joylarda (kamida 1-2 ta umumiy hisoblash formulasi)
 - Grafiklar: ma'lumotlarni vizual ko'rsatish kerak bo'lgan joylarda
-- references: 8-12 ta haqiqiy, mavzuga mos manba
+- references: 8-12 ta manba, APA 7 formatida:
+  * Kitob: Muallif, A. A. (yil). Asar nomi. Nashriyot.
+  * Jurnal: Muallif, A. A. (yil). Maqola nomi. Jurnal nomi, jild(son), sahifalar. https://doi.org/xxx
+  * 40% o'zbek tilidagi manbalar bo'lsin (masalan: Karimov, A. B. (2021). ...)
+  * Qolgan 60% xorijiy (ingliz, rus)
+  * Mavzuga haqiqatan tegishli, realistik manbalar
 - Faqat JSON qaytar`;
 }
 

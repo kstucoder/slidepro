@@ -26,38 +26,41 @@ async function initMathJax() {
 }
 
 // LaTeX → PNG { buf, width, height }
+// em=8, density=144 → raw PNG ≈ 280×29px; MAX_H=28, MAX_W=180 → Word'da ~1.9 dyuym keng
 async function renderFormula(latex, display = true) {
   try {
     const { doc, adaptor } = await initMathJax();
-    const node = doc.convert(latex, { display, em: 16, ex: 8, containerWidth: 1000 });
+    // em=8 (kichik) → formula matn balandligiga mutanosib
+    const node = doc.convert(latex, { display, em: 8, ex: 4, containerWidth: 600 });
     let svg = adaptor.outerHTML(node);
 
-    // faqat <svg>...</svg> qoldirish (mjx-container'siz)
     const svgMatch = svg.match(/<svg[\s\S]*<\/svg>/i);
     if (svgMatch) svg = svgMatch[0];
     if (!/xmlns=/.test(svg)) {
       svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
     }
 
-    // SVG'ni yuqori aniqlikda PNG ga aylantirish (density orqali)
-    const rawPng = await sharp(Buffer.from(svg), { density: 300 })
+    // density=144 — yetarli aniqlik, kichik o'lcham
+    const rawPng = await sharp(Buffer.from(svg), { density: 144 })
       .flatten({ background: { r: 255, g: 255, b: 255 } })
       .png()
       .toBuffer();
 
-    // Haqiqiy piksel o'lchamlarini olish
     const meta = await sharp(rawPng).metadata();
-    const realW = meta.width || 200;
-    const realH = meta.height || 50;
+    const realW = meta.width || 150;
+    const realH = meta.height || 28;
 
-    // Word'da ko'rsatish balandligini cheklash:
-    // display formula balandligi MAKS 60px (oddiy bir qatorli ~22px)
-    // Bu formula matn bilan mutanosib bo'lishini kafolatlaydi
-    const MAX_H = 60;
-    const MAX_W = 420;
+    // Word'da ko'rsatish chegaralari:
+    // MAX_H = 28px (~0.29 dyuym, 2 qator matn balandligi)
+    // MAX_W = 180px (~1.9 dyuym, kontent kengligining ~29%)
+    const MAX_H = 28;
+    const MAX_W = 180;
     let dispH = Math.min(realH, MAX_H);
     let dispW = Math.round(dispH * realW / realH);
     if (dispW > MAX_W) { dispW = MAX_W; dispH = Math.round(dispW * realH / realW); }
+    // minimal o'lcham
+    dispH = Math.max(dispH, 12);
+    dispW = Math.max(dispW, 40);
 
     return { buf: rawPng, width: dispW, height: dispH };
   } catch (e) {
