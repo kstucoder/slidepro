@@ -84,19 +84,21 @@ Quyidagi JSON strukturasida qaytargin:
 }
 
 QOIDALAR:
-- Kirish: 150-250 so'z
-- Xulosa: 200-350 so'z
+- Kirish: 150-250 so'z, formula_count:0, chart_count:0
+- Xulosa: 200-350 so'z, formula_count:0, chart_count:0
 - Asosiy bo'limlar: sahifalar soniga mutanosib (${pages <= 15 ? "1-2" : pages <= 25 ? "2-3" : "3-4"} ta asosiy bo'lim), har biri kichik bo'limlari bilan
-- MUHIM: chapter title'larda "bob" so'zi ISHLATMA. Faqat bo'lim nomi yoz (masalan: "Nazariy asoslar", "Amaliy tahlil")
+- MUHIM: chapter title'larda "bob" so'zi ISHLATMA. Faqat bo'lim nomi yoz
+- Har asosiy bo'lim BOSHQA JIHATNI yoritsin (nazariy/amaliy/taqqoslov/prognoz) — takrorlanmasin
 - word_target'lar yig'indisi ≈ ${totalWords} ga teng bo'lsin
-- Formulalar: mavzuga mos matematik ifodalar bo'lgan joylarda (kamida 1-2 ta)
-- Grafiklar: ma'lumotlarni vizual ko'rsatish kerak bo'lgan joylarda
+- Formulalar: FAQAT aniq fanlar mavzularida (matematika, fizika, kimyo, muhandislik, iqtisodiyot, kompyuter fanlari, biologiya, kimyoviy texnologiya) — u holda har asosiy bob uchun 1-3 ta mavzuga mos formula. Gumanitar, ijtimoiy, tarixiy, ekologik-umumiy mavzularda formula_count:0 bo'lsin. Mavzuning o'ziga qarab hal qil.
+- Grafiklar: har asosiy bob uchun kamida 1 ta grafik (bar/line/pie) — realistik ma'lumotlar bilan
+- Jadvallar: kamida 1 ta ixtiyoriy bob uchun
 - references: 8-12 ta manba, APA 7 formatida. FAQAT HAQIQIY, MAVJUD ASARLAR:
   * Kitob: Muallif, A. A. (yil). Asar nomi. Nashriyot.
   * Jurnal: Muallif, A. A. (yil). Maqola nomi. Jurnal nomi, jild(son), sahifalar.
-  * O'ZBEK (40%): O'zbekiston olimlarining haqiqiy nashr etilgan asarlari — mavzuga oid darsliklar, monografiyalar
-  * XORIJIY (60%): Dunyo bo'yicha tan olingan, keng tarqalgan darsliklar va maqolalar
-  * MUHIM: Faqat mavjudligiga 100% ishonch hosil qilgan manbalarni yozing. Nomalum manba o'rniga mashhur darslikni tanlang.
+  * O'ZBEK (40%): O'zbekiston olimlarining haqiqiy nashr etilgan asarlari
+  * XORIJIY (60%): Dunyo bo'yicha tan olingan darsliklar va maqolalar
+  * MUHIM: Faqat mavjudligiga 100% ishonch hosil qilgan manbalarni yozing.
   * 40% — 2018-2024 yillarda nashr etilgan yangi manbalar
 - Faqat JSON qaytar`;
 }
@@ -113,12 +115,13 @@ function parseOutline(text) {
 
 // ===================== 2-BOSQICH: CHAPTER CONTENT =====================
 function chapterSystemPrompt() {
-  return `Sen akademik mustaqil ish yozuvchisi mutaxassissan. FAQAT to'g'ri JSON qaytarasan — hech qanday izoh, markdown, backtick yo'q. Akademik, rasmiy uslubda yoz.`;
+  return `Sen akademik mustaqil ish yozuvchisi mutaxassissan. FAQAT to'g'ri JSON qaytarasan — hech qanday izoh, markdown, backtick yo'q. Akademik, rasmiy, chuqur tahliliy uslubda yoz.`;
 }
 
 function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterIndex, totalChapters }) {
   const lang = language || "o'zbek";
   const wt = chapter.word_target || 400;
+  const paraCount = Math.max(4, Math.ceil(wt / 110));
   const contentNote = sourceContent
     ? `\nManba kontent (asosiy g'oyalar shunga asoslansin):\n---\n${sourceContent.slice(0,2000)}\n---`
     : "";
@@ -128,8 +131,9 @@ function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterI
 
 Ish: "${outline.meta?.title || "Mavzu"}" (${lang} tilida)
 Bob: "${chapter.title}" (${chapterIndex+1}/${totalChapters})
-So'z maqsadi: KAMIDA ${wt} so'z (paragraflar birgalikda)
-Paragraflar soni: KAMIDA ${Math.max(3, Math.ceil(wt / 100))} ta paragraf (har biri kamida 80-120 so'z)
+So'z maqsadi: KAMIDA ${wt} so'z
+Paragraflar: KAMIDA ${paraCount} ta paragraf, har biri 100–140 so'z
+
 Formulalar: ${chapter.formula_count || 0} ta
 Grafiklar: ${chapter.chart_count || 0} ta  
 Jadvallar: ${chapter.table_count || 0} ta
@@ -142,41 +146,38 @@ Quyidagi JSON qaytargin:
 {
   "chapter_id": "${chapter.id}",
   "title": "${chapter.title}",
-  "content": [
-    <content bloklari>
-  ]
+  "content": [ <content bloklari> ]
 }
 
 Content bloklari turlari:
 1. Paragraf: {"type":"paragraph","text":"..."}
-   - Har bir paragraf kamida 80-150 so'z
-   - Akademik uslub: aniq, dalillangan, havola bilan
+   - Har paragraf: ANIQ FAKT yoki STATISTIKA → TAHLIL → XULOSA (3 qism)
+   - Misol: "2023-yil NASA ma'lumotlariga ko'ra, Yer o'rtacha harorat 1.1°C oshdi. Bu ko'rsatkich..."
+   - KERAKSIZ TAKROR: bir xil jumlani boshqacha yozma. Har paragraf YANGI g'oya olib kelsin.
    
 2. Kichik sarlavha: {"type":"heading","level":2,"text":"1.1. ..."}
-   (faqat sections bo'lsa)
-   
-3. Formula (agar formula_count > 0):
-   {"type":"formula","latex":"E = mc^2","display_text":"E = mc²","caption":"Energiya-massa munosabati","number":1}
-   - latex: to'g'ri LaTeX sintaksis
-   - Formuladan OLDIN va KEYIN izohlovchi paragraf bo'lsin
-   - Mavzuga MOS formula (iqtisod→foiz/o'sish, fizika→harakat, raqamli→n-murakkablik va h.k.)
+
+3. Formula (agar formula_count > 0 — faqat aniq fan mavzularida):
+   {"type":"formula","latex":"...","display_text":"...","caption":"...","number":1}
+   - Formuladan OLDIN (2-3 jumla) va KEYIN (2-3 jumla) MAVZUGA ANIQ ALOQADOR izoh
+   - Umumiy "E=mc²" kabi emas — AYNAN shu mavzu uchun zarur formula
+   - Gumanitar/ijtimoiy mavzularda formula_count=0 bo'lsa bu blok umuman yo'q
    
 4. Grafik (agar chart_count > 0):
-   {"type":"chart","chartType":"bar|line|pie","title":"...","labels":["A","B","C"],"values":[10,25,15],"unit":"","caption":"1-rasm. ...","number":1}
-   - Realistik, mavzuga mos ma'lumotlar
-   - 4-7 ta nuqta yoki kategoriya
-   - Grafikdan OLDIN va KEYIN izohlovchi paragraf bo'lsin
+   {"type":"chart","chartType":"bar|line|pie","title":"...","labels":["..."],"values":[...],"unit":"","caption":"N-rasm. ...","number":1}
+   - Haqiqiy, aniq raqamlar (realistik ma'lumotlar)
    
 5. Jadval (agar table_count > 0):
-   {"type":"table","caption":"1-jadval. ...","number":1,"headers":["Ustun1","Ustun2","Ustun3"],"rows":[["qator1a","qator1b","qator1c"]]}
-   - Kamida 3 ustun, 3-6 qator
-   - Jadvaldan OLDIN va KEYIN izohlovchi paragraf bo'lsin
+   {"type":"table","caption":"N-jadval. ...","number":1,"headers":["..."],"rows":[["..."]]}
 
-QOIDALAR:
-- Barcha paragraflar birgalikda KAMIDA ${wt} so'z bo'lsin (sanab ko'r!)
-- ${lang} tilida, akademik uslubda yoz
-- Formulalar, grafiklar, jadvallar mavzu mohiyatini ochishga xizmat qilsin
-- MUHIM: paragraf matnida LaTeX VA PASTKI CHIZIQ (_) ISHLATMA! LaTeX: \\(...\\), $...$, \\frac kabi belgilar BO'LMASIN. Pastki chiziq: 'P_yangi' EMAS — 'Pyangi' yoki 'yangi P qiymati' yoz. 'R_eski' EMAS — 'Reski' yoki 'eski R'. Formulalar faqat "formula" bloki ichida latex sifatida beriladi.
+SIFAT QOIDALARI (bular muhim!):
+- ${lang} tilida, rasmiy akademik uslub
+- Mavzuning asosiy atamasi HADDAN ORTIQ TAKRORLANMASIN — jumlaning boshida doim bir xil so'z kelmаsin
+- Har bob YANGI JIHAT yoritsin — boshqa boblar mazmunini takrorlamasin
+- KERAKSIZ TO'LDIRUVCHI IBORALAR: "shu bilan birga", "shu sababli", "shuningdek", "o'z navbatida", "muhim rol o'ynaydi", "muhim ahamiyatga ega", "hisoblanadi" — bularni MINIMAL ishlat (jumladan bittadan ko'p bo'lmasin)
+- Muallif ovozi: shaxsiy kuzatuv, taqqoslash, tanqidiy baho bo'lsin
+- Paragraflar birgalikda KAMIDA ${wt} so'z bo'lsin
+- LaTeX VA PASTKI CHIZIQ (_) paragraf matnida BO'LMASIN
 - Faqat JSON qaytar`;
 }
 
