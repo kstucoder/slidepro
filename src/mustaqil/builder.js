@@ -245,7 +245,7 @@ function buildCoverPage(meta) {
 
     // ── 6. SHAHAR + YIL — sahifa pastida ─────────────────────
     // before = katta qiymat → yil sahifa pastiga siqadi
-    cp([r(UL22 + " — " + year)], { before: mm(82) }),
+    cp([r(UL22 + " — " + year)], { before: mm(70) }),
 
     pageBreakPara(),
   ];
