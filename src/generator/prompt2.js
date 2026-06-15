@@ -37,7 +37,7 @@ Mavjud layout turlari (har biri turli vizual struktura):
 - "dual-column": ikki ustun (afzallik/kamchilik, taqqoslash uchun)
 - "metrics": raqamli ko'rsatkichlar paneli (natijalar, statistika uchun)
 - "chart": diagramma + kartochkalar (ma'lumotlar dinamikasi uchun)
-- "conclusion": xulosa slaydi (asosiy natijalar, FAQAT oxirgi slayd uchun)
+- "conclusion": xulosa slaydi — FAQAT oxirgi slayd uchun
 
 Quyidagi JSON qaytar:
 {
@@ -46,16 +46,21 @@ Quyidagi JSON qaytar:
   "slides": [
     { "n": 1, "title": "slayd sarlavhasi", "layout": "stat-callout", "brief": "bu slaydda nima ko'rsatiladi (1-2 jumla)" },
     { "n": 2, "title": "...", "layout": "steps", "brief": "..." }
+  ],
+  "references": [
+    "Muallif, A. A. (yil). Kitob nomi. Nashriyot.",
+    "Muallif, B. B., & Muallif, C. C. (yil). Maqola nomi. Jurnal nomi, jild(son), sahifalar."
   ]
 }
 
 QOIDALAR:
 - AYNAN ${contentSlides} ta slayd (na ko'p, na kam)
-- OXIRGI slayd "conclusion" layout bilan XULOSA bo'lsin (asosiy natijalar)
+- OXIRGI slayd "conclusion" layout bilan XULOSA bo'lsin
 - Qolgan layoutlar XILMA-XIL bo'lsin — ketma-ket bir xil layout ISHLATMA
 - Mantiqiy ketma-ketlik: muammo/dolzarblik → tahlil → yechim → natija → xulosa
 - Har slayd alohida g'oyani yoritadi, takrorlanmasin
 - palette: ocean/forest/terracotta/berry/charcoal/teal dan biri (mavzuga mos)
+- references: 5-8 ta HAQIQIY, MAVJUD manba APA 7 formatida (40% o'zbek, 60% xorijiy)
 - Faqat JSON qaytar`;
 }
 
@@ -75,18 +80,19 @@ function slideSystemPrompt() {
 }
 
 // Har bir layout uchun aniq JSON sxema namunasi
+// MUHIM: <...> ichidagilar — LLM to'ldirishi shart bo'lgan joylar (nusxa qilinmasin!)
 function layoutSchema(layout) {
   const schemas = {
-    "stat-callout": `{"layout":"stat-callout","title":"...","icon":"chart","intro":"kirish matni (1-2 jumla)","stat":{"label":"ko'rsatkich nomi","value":"73%","desc":"izoh"},"highlight":{"icon":"warning","label":"muhim","text":"e'tibor talab qiladigan fikr"},"items":[{"icon":"check","title":"karta 1","desc":"tavsif"},{"icon":"bolt","title":"karta 2","desc":"tavsif"},{"icon":"star","title":"karta 3","desc":"tavsif"}]}`,
-    "objectives": `{"layout":"objectives","title":"...","icon":"target","banner":{"icon":"target","label":"asosiy maqsad","text":"banner matni"},"items":[{"icon":"cogs","title":"maqsad 1","desc":"tavsif"},{"icon":"chart","title":"maqsad 2","desc":"tavsif"},{"icon":"shield","title":"maqsad 3","desc":"tavsif"},{"icon":"users","title":"maqsad 4","desc":"tavsif"}]}`,
-    "steps": `{"layout":"steps","title":"...","icon":"tools","intro":"kirish (1 jumla)","items":[{"icon":"search","title":"qadam 1","desc":"tavsif"},{"icon":"target","title":"qadam 2","desc":"tavsif"},{"icon":"cogs","title":"qadam 3","desc":"tavsif"},{"icon":"check","title":"qadam 4","desc":"tavsif"}],"note":{"icon":"lightbulb","label":"eslatma","text":"muhim izoh"}}`,
-    "feature-grid": `{"layout":"feature-grid","title":"...","icon":"star","intro":"kirish (1 jumla)","items":[{"icon":"shield","title":"xususiyat 1","desc":"to'liq tavsif"},{"icon":"bolt","title":"xususiyat 2","desc":"to'liq tavsif"},{"icon":"leaf","title":"xususiyat 3","desc":"to'liq tavsif"},{"icon":"globe","title":"xususiyat 4","desc":"to'liq tavsif"}]}`,
-    "layers": `{"layout":"layers","title":"...","icon":"layers","intro":"kirish (1 jumla)","items":[{"num":"3","icon":"cloud","title":"yuqori qatlam","desc":"tavsif"},{"num":"2","icon":"server","title":"o'rta qatlam","desc":"tavsif"},{"num":"1","icon":"database","title":"pastki qatlam","desc":"tavsif"}]}`,
-    "split-list": `{"layout":"split-list","title":"...","icon":"list","intro":"kirish (1 jumla)","listTitle":"ro'yxat sarlavhasi","items":[{"text":"band 1"},{"text":"band 2"},{"text":"band 3"},{"text":"band 4"},{"text":"band 5"}],"panel":{"label":"panel sarlavhasi","lines":["satr 1","satr 2"],"foot":"izoh"},"highlight":{"icon":"up","label":"natija","value":"+42%","desc":"izoh"}}`,
-    "dual-column": `{"layout":"dual-column","title":"...","icon":"users","leftTitle":"chap ustun","left":[{"icon":"check","title":"element 1","desc":"tavsif"},{"icon":"bolt","title":"element 2","desc":"tavsif"},{"icon":"star","title":"element 3","desc":"tavsif"}],"rightTitle":"o'ng ustun","right":[{"title":"element 1","desc":"tavsif","color":"bad"},{"title":"element 2","desc":"tavsif","color":"accent"},{"title":"element 3","desc":"tavsif","color":"secondary"}],"strip":[{"value":"2","label":"ustun"},{"value":"6","label":"element"}]}`,
-    "metrics": `{"layout":"metrics","title":"...","icon":"gauge","intro":"kirish (1 jumla)","stats":[{"value":"98","unit":"%","label":"ko'rsatkich 1","sub":"izoh"},{"value":"3.2","unit":"x","label":"ko'rsatkich 2","sub":"izoh"},{"value":"14","unit":"kun","label":"ko'rsatkich 3","sub":"izoh"},{"value":"5","unit":"M","label":"ko'rsatkich 4","sub":"izoh"}],"stagesTitle":"bosqichlar","stages":[{"title":"bosqich 1","desc":"tavsif"},{"title":"bosqich 2","desc":"tavsif"},{"title":"bosqich 3","desc":"tavsif"}]}`,
-    "chart": `{"layout":"chart","title":"...","icon":"chart","cards":[{"value":"45K","unit":"ta","label":"karta 1"},{"value":"+28","unit":"%","label":"karta 2"},{"value":"3.8","unit":"x","label":"karta 3"},{"value":"A+","unit":"","label":"karta 4"}],"chart":{"title":"diagramma nomi","type":"bar","seriesName":"ko'rsatkich","labels":["A","B","C","D","E"],"values":[42,68,55,80,95]},"panels":[{"label":"panel 1","lines":["xulosa","matni"]},{"label":"panel 2","lines":["tahlil","matni"]}]}`,
-    "conclusion": `{"layout":"conclusion","title":"XULOSA","items":[{"icon":"check","text":"birinchi asosiy xulosa (to'liq jumla)"},{"icon":"star","text":"ikkinchi asosiy xulosa"},{"icon":"rocket","text":"uchinchi asosiy xulosa"},{"icon":"layers","text":"to'rtinchi asosiy xulosa"}]}`,
+    "stat-callout": `{"layout":"stat-callout","title":"<slayd sarlavhasi>","icon":"chart","intro":"<kirish matni 1-2 jumla>","stat":{"label":"<ko'rsatkich nomi>","value":"<masalan 73%>","desc":"<izoh>"},"highlight":{"icon":"warning","label":"<muhim jihat nomi>","text":"<e'tibor talab qiladigan fikr>"},"items":[{"icon":"check","title":"<1-jihat nomi>","desc":"<tavsif>"},{"icon":"bolt","title":"<2-jihat nomi>","desc":"<tavsif>"},{"icon":"star","title":"<3-jihat nomi>","desc":"<tavsif>"}]}`,
+    "objectives": `{"layout":"objectives","title":"<slayd sarlavhasi>","icon":"target","banner":{"icon":"target","label":"<asosiy maqsad nomi>","text":"<banner matni>"},"items":[{"icon":"cogs","title":"<1-maqsad>","desc":"<tavsif>"},{"icon":"chart","title":"<2-maqsad>","desc":"<tavsif>"},{"icon":"shield","title":"<3-maqsad>","desc":"<tavsif>"},{"icon":"users","title":"<4-maqsad>","desc":"<tavsif>"}]}`,
+    "steps": `{"layout":"steps","title":"<slayd sarlavhasi>","icon":"tools","intro":"<kirish 1 jumla>","items":[{"icon":"search","title":"<1-qadam nomi>","desc":"<tavsif>"},{"icon":"target","title":"<2-qadam nomi>","desc":"<tavsif>"},{"icon":"cogs","title":"<3-qadam nomi>","desc":"<tavsif>"},{"icon":"check","title":"<4-qadam nomi>","desc":"<tavsif>"}],"note":{"icon":"lightbulb","label":"<eslatma nomi>","text":"<muhim izoh>"}}`,
+    "feature-grid": `{"layout":"feature-grid","title":"<slayd sarlavhasi>","icon":"star","intro":"<kirish 1 jumla>","items":[{"icon":"shield","title":"<1-xususiyat>","desc":"<to'liq tavsif>"},{"icon":"bolt","title":"<2-xususiyat>","desc":"<to'liq tavsif>"},{"icon":"leaf","title":"<3-xususiyat>","desc":"<to'liq tavsif>"},{"icon":"globe","title":"<4-xususiyat>","desc":"<to'liq tavsif>"}]}`,
+    "layers": `{"layout":"layers","title":"<slayd sarlavhasi>","icon":"layers","intro":"<kirish 1 jumla>","items":[{"num":"3","icon":"cloud","title":"<yuqori qatlam nomi>","desc":"<tavsif>"},{"num":"2","icon":"server","title":"<o'rta qatlam nomi>","desc":"<tavsif>"},{"num":"1","icon":"database","title":"<pastki qatlam nomi>","desc":"<tavsif>"}]}`,
+    "split-list": `{"layout":"split-list","title":"<slayd sarlavhasi>","icon":"list","intro":"<kirish 1 jumla>","listTitle":"<ro'yxat sarlavhasi>","items":[{"text":"<band 1>"},{"text":"<band 2>"},{"text":"<band 3>"},{"text":"<band 4>"},{"text":"<band 5>"}],"panel":{"label":"<panel sarlavhasi>","lines":["<satr 1>","<satr 2>"],"foot":"<izoh>"},"highlight":{"icon":"up","label":"<natija nomi>","value":"<masalan +42%>","desc":"<izoh>"}}`,
+    "dual-column": `{"layout":"dual-column","title":"<slayd sarlavhasi>","icon":"users","leftTitle":"<chap ustun sarlavhasi>","left":[{"icon":"check","title":"<element 1>","desc":"<tavsif>"},{"icon":"bolt","title":"<element 2>","desc":"<tavsif>"},{"icon":"star","title":"<element 3>","desc":"<tavsif>"}],"rightTitle":"<o'ng ustun sarlavhasi>","right":[{"title":"<element 1>","desc":"<tavsif>","color":"bad"},{"title":"<element 2>","desc":"<tavsif>","color":"accent"},{"title":"<element 3>","desc":"<tavsif>","color":"secondary"}],"strip":[{"value":"<son>","label":"<nomi>"},{"value":"<son>","label":"<nomi>"}]}`,
+    "metrics": `{"layout":"metrics","title":"<slayd sarlavhasi>","icon":"gauge","intro":"<kirish 1 jumla>","stats":[{"value":"<son>","unit":"%","label":"<ko'rsatkich nomi>","sub":"<izoh>"},{"value":"<son>","unit":"x","label":"<ko'rsatkich nomi>","sub":"<izoh>"},{"value":"<son>","unit":"kun","label":"<ko'rsatkich nomi>","sub":"<izoh>"},{"value":"<son>","unit":"","label":"<ko'rsatkich nomi>","sub":"<izoh>"}],"stagesTitle":"<bosqichlar sarlavhasi>","stages":[{"title":"<1-bosqich>","desc":"<tavsif>"},{"title":"<2-bosqich>","desc":"<tavsif>"},{"title":"<3-bosqich>","desc":"<tavsif>"}]}`,
+    "chart": `{"layout":"chart","title":"<slayd sarlavhasi>","icon":"chart","cards":[{"value":"<son>","unit":"<birlik>","label":"<ko'rsatkich nomi>"},{"value":"<son>","unit":"<birlik>","label":"<ko'rsatkich nomi>"},{"value":"<son>","unit":"<birlik>","label":"<ko'rsatkich nomi>"},{"value":"<son>","unit":"<birlik>","label":"<ko'rsatkich nomi>"}],"chart":{"title":"<diagramma nomi>","type":"bar","seriesName":"<ko'rsatkich>","labels":["<kat1>","<kat2>","<kat3>","<kat4>","<kat5>"],"values":[42,68,55,80,95]},"panels":[{"label":"<panel sarlavhasi>","lines":["<qisqa xulosa 4-6 so'z>"]},{"label":"<panel sarlavhasi>","lines":["<qisqa xulosa 4-6 so'z>"]}]}`,
+    "conclusion": `{"layout":"conclusion","title":"XULOSA","summary":"<mavzu bo'yicha 60-80 so'zlik umumiy xulosa — yaxlit paragraf matni, butun sahifani to'ldirsin>","points":[{"icon":"check","text":"<1-asosiy natija (qisqa jumla)>"},{"icon":"star","text":"<2-asosiy natija>"},{"icon":"rocket","text":"<3-asosiy natija>"},{"icon":"layers","text":"<4-asosiy natija>"}]}`,
   };
   return schemas[layout] || schemas["feature-grid"];
 }
@@ -104,7 +110,8 @@ Quyidagi AYNAN shu strukturada to'liq to'ldirilgan JSON qaytar:
 ${layoutSchema(slide.layout)}
 
 QOIDALAR:
-- BARCHA maydonlarni to'liq to'ldir — bo'sh qoldirma
+- BARCHA <...> joylarni mavzuga mos haqiqiy matn bilan to'ldir — birorta ham bo'sh yoki namuna matn qoldirma
+- MUHIM: "karta 1", "karta 2", "panel 1", "panel 2", "element 1", "tavsif", "kirish" kabi umumiy so'zlarni ISHLATMA — aniq, mazmunga oid matn yoz
 - Matnlar ${lang} tilida, qisqa va ta'sirli (slayd uchun)
 - title: "${slide.title}" ni ishlat
 - icon: faqat shu ro'yxatdan — check, bolt, star, shield, cogs, chart, target, users, globe, leaf, cloud, server, database, search, tools, lightbulb, up, warning, rocket, gauge, book, list, layers

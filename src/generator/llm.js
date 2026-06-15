@@ -40,19 +40,27 @@ function ensureStructure(spec, topic) {
 
   // 2) ADABIYOTLAR — oxirgi bo'lsin
   let ri = slides.findIndex((s) => s.layout === "references");
+  // Spec'dan haqiqiy APA adabiyotlarni olish
+  const realRefs = Array.isArray(spec.references) && spec.references.length > 0
+    ? spec.references
+    : null;
   if (ri !== -1 && ri !== slides.length - 1) slides.push(slides.splice(ri, 1)[0]);
   else if (ri === -1) {
     slides.push({
       layout: "references", title: "Foydalanilgan adabiyotlar", icon: "book",
-      items: [
+      items: realRefs || [
         "Mavzu bo'yicha asosiy darslik va o'quv adabiyotlari.",
         "Tegishli sohaviy ilmiy maqolalar va nashrlar.",
         "Rasmiy hujjatlar, standartlar va me'yoriy manbalar.",
         "Ishonchli internet manbalari va ochiq akademik bazalar.",
       ],
-      note: "Manbalar ro'yxatini aniq talab asosida to'ldirish tavsiya etiladi.",
+      note: realRefs ? null : "Manbalar ro'yxatini aniq talab asosida to'ldirish tavsiya etiladi.",
       thanks: "E'tiboringiz uchun rahmat!",
     });
+  } else if (ri !== -1 && realRefs) {
+    // Mavjud references slaydiga haqiqiy adabiyotlarni qo'yamiz
+    slides[slides.length - 1].items = realRefs;
+    slides[slides.length - 1].note = null;
   }
 
   // 3) XULOSA — adabiyotlardan oldin bo'lsin

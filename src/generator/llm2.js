@@ -72,6 +72,20 @@ async function generateSpecParallel({ topic, slides, sourceContent, studentName,
 
   // ── PASS 2: HAR SLAYD PARALLEL ──────────────────────────
   console.log("[taqdimot] 2-pass: " + outlineSlides.length + " slayd parallel...");
+
+  // Agar biror matnda qolgan placeholder bo'lsa tozalash
+  const PLACEHOLDER_RE = /^(karta|panel|element|tavsif|kirish|maqsad|qadam|xususiyat|qatlam|band|bosqich|ustun|ko'rsatkich)\s*\d+$/i;
+  function cleanPlaceholders(obj) {
+    if (!obj || typeof obj !== "object") return;
+    Object.keys(obj).forEach(k => {
+      const v = obj[k];
+      if (typeof v === "string" && PLACEHOLDER_RE.test(v.trim())) {
+        obj[k] = "";  // Bo'sh qoldiramiz — layout o'zi yashiradi
+      } else if (typeof v === "object") {
+        cleanPlaceholders(v);
+      }
+    });
+  }
   const results = await Promise.allSettled(
     outlineSlides.map(slide =>
       call({
@@ -80,7 +94,8 @@ async function generateSpecParallel({ topic, slides, sourceContent, studentName,
         provider, cfg, maxTokens: 2000,
       }).then(r => {
         const parsed = parseSlide(r.text);
-        parsed.layout = slide.layout; // layout outline'dan kafolatlanadi
+        cleanPlaceholders(parsed);
+        parsed.layout = slide.layout;
         if (!parsed.title) parsed.title = slide.title;
         return parsed;
       })
@@ -108,6 +123,8 @@ async function generateSpecParallel({ topic, slides, sourceContent, studentName,
     palette: outline.palette || "ocean",
     title: outline.title || topic,
     slides: contentSpecs,
+    // Outline'dan haqiqiy APA adabiyotlarni references slaydiga uzatamiz
+    references: Array.isArray(outline.references) ? outline.references : [],
   };
 
   console.log("[taqdimot] " + contentSpecs.length + " mazmunli slayd tayyor");

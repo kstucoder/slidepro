@@ -505,8 +505,13 @@ function chartLayout(pres, slide, d, ctx) {
       const py = chartY + i * (ph + 0.2);
       card(slide, pres, px, py, pw, ph, i === 0 ? t.goodTint : t.tint);
       if (p.label) txt(slide, p.label, { x: px + 0.3, y: py + 0.2, w: pw - 0.6, h: 0.4, fontFace: FONTS.body, fontSize: 12.5, bold: true, color: i === 0 ? t.good : t.primary });
-      const lines = (p.lines || []).map((l, j, arr) => ({ text: l, options: { bold: true, breakLine: j < arr.length - 1, color: t.ink } }));
-      txt(slide, lines, { x: px + 0.3, y: py + 0.65, w: pw - 0.6, h: ph - 0.8, fontFace: FONTS.body, fontSize: 15, lineSpacingMultiple: 1.25, valign: "top" });
+      // Matn overflow'ni oldini olish: har qator max 6 so'z, max 3 qator
+      const rawLines = (p.lines || []).slice(0, 3).map(l => {
+        const words = String(l).split(/\s+/).filter(Boolean);
+        return words.length > 8 ? words.slice(0, 8).join(" ") + "…" : words.join(" ");
+      });
+      const lines = rawLines.map((l, j, arr) => ({ text: l, options: { bold: true, breakLine: j < arr.length - 1, color: t.ink } }));
+      txt(slide, lines, { x: px + 0.3, y: py + 0.65, w: pw - 0.6, h: ph - 0.8, fontFace: FONTS.body, fontSize: 13, lineSpacingMultiple: 1.2, valign: "top" });
     });
   }
 }
@@ -517,22 +522,48 @@ function chartLayout(pres, slide, d, ctx) {
 function conclusion(pres, slide, d, ctx) {
   const { t } = ctx;
   slide.background = { color: t.dark };
-  slide.addShape(pres.shapes.OVAL, { x: -2.2, y: 4.3, w: 5.2, h: 5.2, fill: { color: t.primary, transparency: 60 } });
+  // Dekorativ doiralar
+  slide.addShape(pres.shapes.OVAL, { x: -2.2, y: 4.3,  w: 5.2, h: 5.2, fill: { color: t.primary,   transparency: 60 } });
   slide.addShape(pres.shapes.OVAL, { x: 11.3, y: -1.8, w: 4.4, h: 4.4, fill: { color: t.secondary, transparency: 62 } });
 
+  // Sarlavha
   chip(slide, pres, ctx, MX, 0.6, 0.9, "check", t.secondary, "FFFFFF", true);
-  txt(slide, d.title || "XULOSA", { x: MX + 1.1, y: 0.6, w: 10, h: 0.9, fontFace: FONTS.head, fontSize: 32, bold: true, color: t.card, valign: "middle" });
+  txt(slide, d.title || "XULOSA", {
+    x: MX + 1.1, y: 0.6, w: 10, h: 0.9,
+    fontFace: FONTS.head, fontSize: 32, bold: true, color: t.card, valign: "middle",
+  });
 
-  const items = (d.items || []).slice(0, 6);
-  const n = items.length || 1;
-  const top = 1.95, bottom = 7.0;
-  const gap = 0.18;
-  const ih = Math.min(1.0, (bottom - top - gap * (n - 1)) / n);
-  items.forEach((it, i) => {
-    const cy = top + i * (ih + gap);
-    slide.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: MX, y: cy, w: W - MX * 2, h: ih, rectRadius: 0.12, fill: { color: "FFFFFF", transparency: 88 } });
-    chip(slide, pres, ctx, MX + 0.28, cy + (ih - 0.52) / 2, 0.52, it.icon || "check", t.card, t.secondary, true);
-    txtFit(slide, typeof it === "string" ? it : it.text || "", { x: MX + 1.05, y: cy, w: W - MX * 2 - 1.4, h: ih, fontFace: FONTS.body, fontSize: 14, color: t.card, valign: "middle", lineSpacingMultiple: 1.04 });
+  // summary — yaxlit matn bloki (sahifani to'ldiradi)
+  const summary = d.summary || ((d.items || []).map(it => typeof it === "string" ? it : (it.text || "")).join(" "));
+  if (summary) {
+    slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+      x: MX, y: 1.72, w: W - MX * 2, h: 2.4,
+      rectRadius: 0.14, fill: { color: "FFFFFF", transparency: 85 },
+    });
+    txt(slide, summary, {
+      x: MX + 0.3, y: 1.8, w: W - MX * 2 - 0.6, h: 2.25,
+      fontFace: FONTS.body, fontSize: 15, color: t.card,
+      valign: "middle", align: "left", lineSpacingMultiple: 1.5, wrap: true,
+    });
+  }
+
+  // Pastda: 4 ta asosiy natija (kichik qatorlar)
+  const points = d.points || d.items || [];
+  const show = points.slice(0, 4);
+  const colW = (W - MX * 2 - 0.3) / 2;
+  show.forEach((it, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = MX + col * (colW + 0.3);
+    const y = 4.4 + row * 1.12;
+    const text = typeof it === "string" ? it : (it.text || "");
+    const icon = it.icon || ["check", "star", "rocket", "layers"][i];
+    slide.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y, w: colW, h: 0.92, rectRadius: 0.12, fill: { color: "FFFFFF", transparency: 88 } });
+    chip(slide, pres, ctx, x + 0.2, y + 0.2, 0.52, icon, t.card, t.secondary, true);
+    txtFit(slide, text, {
+      x: x + 0.88, y, w: colW - 1.05, h: 0.92,
+      fontFace: FONTS.body, fontSize: 13, color: t.card, valign: "middle", lineSpacingMultiple: 1.08,
+    });
   });
 }
 

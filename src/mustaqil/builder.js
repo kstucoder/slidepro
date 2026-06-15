@@ -192,7 +192,10 @@ function imageBlock(media, caption) {
 
 // ─── jadval bloki ──────────────────────────────────────────
 function tableBlock(data, caption) {
-  const { headers = [], rows = [] } = data;
+  const headers = Array.isArray(data.headers) ? data.headers : [];
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  // Jadval bo'sh bo'lsa — umuman chiqarmaymiz
+  if (headers.length === 0 && rows.length === 0) return [];
   const nodes = [];
   if (caption) nodes.push(captionPara(caption));
   const headerRow = new TableRow({
@@ -206,10 +209,10 @@ function tableBlock(data, caption) {
       margins: { top: mm(1.5), bottom: mm(1.5), left: mm(2), right: mm(2) },
     })),
   });
-  const dataRows = rows.map((row) => new TableRow({
+  const dataRows = rows.filter(row => Array.isArray(row)).map((row) => new TableRow({
     children: row.map((cell) => new TableCell({
       children: [new Paragraph({
-        children: [new TextRun({ text: String(cell), font: FONT, size: FONT_SIZE, color: BLACK })],
+        children: [new TextRun({ text: cell == null ? "" : String(cell), font: FONT, size: FONT_SIZE, color: BLACK })],
         spacing: { line: 240 }, indent: undefined,
       })],
       margins: { top: mm(1.5), bottom: mm(1.5), left: mm(2), right: mm(2) },
@@ -377,7 +380,7 @@ function buildChapterContent(chapter, pngCache, isFirst) {
     if (!item || !item.type) return;
     switch (item.type) {
       case "paragraph":
-        if (item.text && item.text.trim()) nodes.push(para(item.text.trim()));
+        if (item.text != null && String(item.text).trim()) nodes.push(para(String(item.text).trim()));
         break;
       case "heading":
         nodes.push(item.level === 2 ? heading2(item.text || "") : heading1(item.text || ""));
