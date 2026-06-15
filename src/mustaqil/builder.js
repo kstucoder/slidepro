@@ -24,11 +24,19 @@ const BLACK = "000000";
 function cleanInlineLatex(text) {
   if (!text) return "";
   let t = String(text);
+  // 1) Taniqli LaTeX delimiter'lar: \(...\), \[...\], $...$
   t = t.replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\$([^$]+?)\$/g, (_, m) => latexToUnicode(m));
+  // 2) Qolgan LaTeX buyruqlari (delimiter'siz)
   if (/\\[a-zA-Z]+|[_^]\{/.test(t)) t = latexToUnicode(t);
+  // 3) Delimiter'siz pastki chiziqli o'zgaruvchilar:
+  //    X_1  → X₁   (raqamli subscript)
+  //    P_yangi → Pyangi  (so'zli subscript — chiziq olib tashlanadi)
+  const subMap = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉'};
+  t = t.replace(/([A-Za-z])_([0-9])/g, (_, b, d) => b + (subMap[d] || d));
+  t = t.replace(/([A-Za-z])_([a-zA-Z][a-zA-Z0-9]*)/g, '$1$2');
   return t;
 }
 
