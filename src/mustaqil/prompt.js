@@ -45,7 +45,7 @@ Quyidagi JSON strukturasida qaytargin:
     "student_group": "${studentGroup || "—"}",
     "supervisor": "${supervisor || "O'qituvchi"}",
     "city": "shahar",
-    "year": "2025",
+    "year": "${new Date().getFullYear()}",
     "language": "${lang}"
   },
   "total_words_target": ${totalWords},
@@ -55,21 +55,21 @@ Quyidagi JSON strukturasida qaytargin:
       "title": "Kirish",
       "level": 1,
       "word_target": <raqam>,
-      "formula_count": <0 yoki 1>,
-      "chart_count": <0 yoki 1>,
-      "table_count": <0 yoki 1>,
+      "formula_count": 0,
+      "chart_count": 0,
+      "table_count": 0,
       "sections": []
     },
     {
       "id": "ch1",
-      "title": "1-bob. <bob nomi>",
+      "title": "<asosiy bo'lim nomi, BOB so'zi ISHLATMA>",
       "level": 1,
       "word_target": <raqam>,
       "formula_count": <raqam>,
       "chart_count": <raqam>,
       "table_count": <raqam>,
       "sections": [
-        {"id":"ch1_1","title":"1.1. <kichik bob>","level":2,"word_target":<raqam>}
+        {"id":"ch1_1","title":"<kichik bo'lim nomi>","level":2,"word_target":<raqam>}
       ]
     }
   ],
@@ -81,17 +81,17 @@ Quyidagi JSON strukturasida qaytargin:
 
 QOIDALAR:
 - Kirish: 150-250 so'z
-- Xulosa: 200-350 so'z  
-- Asosiy boblar: 2-4 ta, har biri kichik bo'limlari bilan
+- Xulosa: 200-350 so'z
+- Asosiy bo'limlar: sahifalar soniga mutanosib (${pages <= 15 ? "1-2" : pages <= 25 ? "2-3" : "3-4"} ta asosiy bo'lim), har biri kichik bo'limlari bilan
+- MUHIM: chapter title'larda "bob" so'zi ISHLATMA. Faqat bo'lim nomi yoz (masalan: "Nazariy asoslar", "Amaliy tahlil")
 - word_target'lar yig'indisi ≈ ${totalWords} ga teng bo'lsin
-- Formulalar: mavzuga mos matematik ifodalar bo'lgan joylarda (kamida 1-2 ta umumiy hisoblash formulasi)
+- Formulalar: mavzuga mos matematik ifodalar bo'lgan joylarda (kamida 1-2 ta)
 - Grafiklar: ma'lumotlarni vizual ko'rsatish kerak bo'lgan joylarda
 - references: 8-12 ta manba, APA 7 formatida:
   * Kitob: Muallif, A. A. (yil). Asar nomi. Nashriyot.
   * Jurnal: Muallif, A. A. (yil). Maqola nomi. Jurnal nomi, jild(son), sahifalar. https://doi.org/xxx
-  * 40% o'zbek tilidagi manbalar bo'lsin (masalan: Karimov, A. B. (2021). ...)
+  * 40% o'zbek tilidagi manbalar bo'lsin
   * Qolgan 60% xorijiy (ingliz, rus)
-  * Mavzuga haqiqatan tegishli, realistik manbalar
 - Faqat JSON qaytar`;
 }
 

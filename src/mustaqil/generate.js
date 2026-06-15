@@ -92,6 +92,8 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
     maxTokens: 2500,
   });
   const outline = parseOutline(outlineText);
+  // Yilni majburiy joriy yilga o'rnatish (LLM eski yil yozishi mumkin)
+  if (outline.meta) outline.meta.year = String(new Date().getFullYear());
   console.log("[mustaqil] outline: "+outline.chapters.length+" bob, target="+outline.total_words_target+" so'z");
 
   // ── 2-BOSQICH: CHAPTER CONTENT (parallel) ──────────────
