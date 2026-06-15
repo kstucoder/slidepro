@@ -164,6 +164,7 @@ QOIDALAR:
 - Barcha paragraflar birgalikda KAMIDA ${wt} so'z bo'lsin (sanab ko'r!)
 - ${lang} tilida, akademik uslubda yoz
 - Formulalar, grafiklar, jadvallar mavzu mohiyatini ochishga xizmat qilsin
+- MUHIM: paragraf matnida LaTeX ishlatma! \\(...\\), $...$, \\frac kabi belgilar paragrafda BO'LMASIN. Matematik belgilarni oddiy matn bilan yoz (masalan "P_yangi", "r foiz stavkasi", "n - davrlar soni"). Formulalar faqat "formula" bloki ichida latex sifatida beriladi.
 - Faqat JSON qaytar`;
 }
 

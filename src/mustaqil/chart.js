@@ -36,8 +36,8 @@ function barSVG({ labels=[], values=[], title="", unit="" }) {
     ticks+=`<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="#e8e8e8" stroke-width="0.8"/>`;
     ticks+=`<text x="${(PL-8).toFixed(1)}" y="${y}" dy="4" text-anchor="end" font-size="10" fill="#777">${v%1?v.toFixed(1):v.toFixed(0)}</text>`;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white">
-  <text x="${W/2}" y="28" text-anchor="middle" font-size="15" font-weight="bold" font-family="Arial,sans-serif" fill="#111">${esc(title)}</text>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif">
+  <text x="${W/2}" y="28" text-anchor="middle" font-size="15" font-weight="bold" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif" fill="#111">${esc(title)}</text>
   ${unit?`<text x="${PL-10}" y="${PT-8}" text-anchor="middle" font-size="10" fill="#999">${esc(unit)}</text>`:""}
   <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#999" stroke-width="1.2"/>
   <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#999" stroke-width="1.2"/>
@@ -66,8 +66,8 @@ function lineSVG({ labels=[], values=[], title="", unit="" }) {
     ticks+=`<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="#e8e8e8" stroke-width="0.8"/>`;
     ticks+=`<text x="${(PL-8)}" y="${y}" dy="4" text-anchor="end" font-size="10" fill="#777">${v%1?v.toFixed(1):v.toFixed(0)}</text>`;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white">
-  <text x="${W/2}" y="28" text-anchor="middle" font-size="15" font-weight="bold" font-family="Arial,sans-serif" fill="#111">${esc(title)}</text>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif">
+  <text x="${W/2}" y="28" text-anchor="middle" font-size="15" font-weight="bold" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif" fill="#111">${esc(title)}</text>
   <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#999" stroke-width="1.2"/>
   <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#999" stroke-width="1.2"/>
   ${ticks}
@@ -96,8 +96,8 @@ function pieSVG({ labels=[], values=[], title="" }) {
     legend+=`<text x="343" y="${ly2+2}" font-size="12" fill="#333">${esc(String(labels[i]||""))} (${pct}%)</text>`;
     angle+=a;
   });
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white">
-  <text x="${W/2}" y="24" text-anchor="middle" font-size="15" font-weight="bold" font-family="Arial,sans-serif" fill="#111">${esc(title)}</text>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif">
+  <text x="${W/2}" y="24" text-anchor="middle" font-size="15" font-weight="bold" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif" fill="#111">${esc(title)}</text>
   ${slices}${legend}
 </svg>`;
 }

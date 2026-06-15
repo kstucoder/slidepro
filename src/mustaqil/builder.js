@@ -20,8 +20,57 @@ const LINE_SPACING = { line: 360, lineRule: "auto" }; // 1.5 = 360/240
 const INDENT = mm(12.5); // 1.25 sm paragraf ichki chekkasi
 
 // ─── helpers ───────────────────────────────────────────────
+// Matn ichidagi inline LaTeX ( \(...\), \[...\], $...$ ) ni Unicode'ga aylantirish.
+// Word'da xom LaTeX ko'rinmasligi uchun.
+function cleanInlineLatex(text) {
+  if (!text) return "";
+  let t = String(text);
+
+  // inline delimiterlarни olib tashlash, ichidagini saqlash
+  t = t.replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => latexToUnicode(m));
+  t = t.replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => latexToUnicode(m));
+  t = t.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => latexToUnicode(m));
+  t = t.replace(/\$([^$]+?)\$/g, (_, m) => latexToUnicode(m));
+
+  // agar hali ham LaTeX buyruqlari qolgan bo'lsa (delimiter'siz)
+  if (/\\[a-zA-Z]+|[_^]\{/.test(t)) {
+    t = latexToUnicode(t);
+  }
+  return t;
+}
+
+// LaTeX ifodasini Unicode matnga aylantirish (oddiy holatlar uchun)
+function latexToUnicode(s) {
+  let t = String(s);
+  // kasr
+  t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1)/($2)");
+  t = t.replace(/\\sqrt\{([^{}]+)\}/g, "√($1)");
+  t = t.replace(/\\times/g, "×").replace(/\\cdot/g, "·").replace(/\\div/g, "÷");
+  t = t.replace(/\\pm/g, "±").replace(/\\leq/g, "≤").replace(/\\geq/g, "≥")
+       .replace(/\\neq/g, "≠").replace(/\\approx/g, "≈").replace(/\\infty/g, "∞");
+  t = t.replace(/\\sum/g, "Σ").replace(/\\prod/g, "∏").replace(/\\int/g, "∫")
+       .replace(/\\partial/g, "∂").replace(/\\nabla/g, "∇");
+  // yunon harflari
+  const greek = { alpha:"α", beta:"β", gamma:"γ", delta:"δ", epsilon:"ε", theta:"θ",
+    lambda:"λ", mu:"μ", pi:"π", rho:"ρ", sigma:"σ", tau:"τ", phi:"φ", omega:"ω",
+    Delta:"Δ", Sigma:"Σ", Omega:"Ω", Pi:"Π", Gamma:"Γ", Theta:"Θ", Lambda:"Λ", Phi:"Φ" };
+  Object.keys(greek).forEach((k) => { t = t.replace(new RegExp("\\\\" + k + "\\b", "g"), greek[k]); });
+  // pastki indeks _{...} yoki _x
+  const subMap = { "0":"₀","1":"₁","2":"₂","3":"₃","4":"₄","5":"₅","6":"₆","7":"₇","8":"₈","9":"₉",
+    "+":"₊","-":"₋","n":"ₙ","i":"ᵢ","j":"ⱼ","a":"ₐ","x":"ₓ" };
+  const supMap = { "0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹",
+    "+":"⁺","-":"⁻","n":"ⁿ","i":"ⁱ" };
+  t = t.replace(/_\{([^{}]+)\}/g, (_, m) => m.split("").map((c) => subMap[c] || c).join(""));
+  t = t.replace(/_([a-zA-Z0-9])/g, (_, c) => subMap[c] || ("_" + c));
+  t = t.replace(/\^\{([^{}]+)\}/g, (_, m) => m.split("").map((c) => supMap[c] || c).join(""));
+  t = t.replace(/\^([a-zA-Z0-9])/g, (_, c) => supMap[c] || ("^" + c));
+  // qolgan figurali qavslar va backslashlar
+  t = t.replace(/[{}]/g, "").replace(/\\([a-zA-Z]+)/g, "$1").replace(/\\/g, "");
+  return t.replace(/\s+/g, " ").trim();
+}
+
 function para(text, opts = {}) {
-  const runs = typeof text === "string" ? [text] : text;
+  const runs = typeof text === "string" ? [cleanInlineLatex(text)] : text;
   const runList = runs.map((r) => {
     if (typeof r === "string") {
       return new TextRun({ text: r, font: FONT, size: FONT_SIZE, ...opts.runOpts });

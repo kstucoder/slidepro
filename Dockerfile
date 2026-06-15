@@ -1,9 +1,12 @@
 # Dockerfile — Railway/Render uchun
 FROM node:20-slim
 
-# sharp va better-sqlite3 uchun build vositalari
+# sharp va better-sqlite3 uchun build vositalari + SVG matn uchun shriftlar
+# fontconfig + DejaVu shriftlar: diagrammalardagi matn □□□ bo'lib qolmasligi uchun
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ \
+    fontconfig fonts-dejavu-core fonts-dejavu-extra fonts-liberation \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

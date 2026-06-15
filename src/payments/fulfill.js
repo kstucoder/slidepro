@@ -18,13 +18,17 @@ function slug(s) {
   return (s || "taqdimot").toLowerCase().replace(/[^a-z0-9\u0400-\u04FF]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "taqdimot";
 }
 
-// kesh kaliti: mavzu (normallashtirilgan) + slayd soni + kontent xeshi
+// kesh kaliti: ish turi + mavzu (normallashtirilgan) + son + kontent xeshi
+// MUHIM: work_type kalitda bo'lishi shart — aks holda bir xil mavzuli
+// taqdimot va mustaqil ish to'qnashib, noto'g'ri fayl yuborilishi mumkin.
 function cacheKey(order) {
   const norm = (order.topic || "").trim().toLowerCase().replace(/\s+/g, " ");
   const contentHash = order.content_text
     ? crypto.createHash("md5").update(order.content_text).digest("hex").slice(0, 8)
     : "ai";
-  return `${norm}|${order.slides}|${contentHash}`;
+  const wt = order.work_type || "taqdimot";
+  const count = wt === "mustaqil" ? (order.pages || "?") : (order.slides || "?");
+  return `${wt}|${norm}|${count}|${contentHash}`;
 }
 
 async function fulfillOrder(orderId) {
@@ -35,13 +39,15 @@ async function fulfillOrder(orderId) {
   updateOrder(orderId, { status: "generating", paid_at: Date.now() });
   const key = cacheKey(order);
 
-  // 1) KESH TEKSHIRUVI — bir xil taqdimot avval yaratilganmi?
+  // 1) KESH TEKSHIRUVI — bir xil ish avval yaratilganmi?
   try {
     const cached = getCache(key);
     if (cached && cached.file_id) {
-      await _bot.api.sendDocument(order.user_tg_id, cached.file_id, {
-        caption: `🎉 Taqdimotingiz tayyor!\n\n📌 Mavzu: ${order.topic}\n📄 Slaydlar: ${order.slides} ta\n\n(Tezkor yetkazildi)`,
-      });
+      const isMustaqilC = order.work_type === "mustaqil";
+      const capC = isMustaqilC
+        ? `📄 Mustaqil ishingiz tayyor!\n\n📌 Mavzu: ${order.topic}\n📋 Sahifalar: ${order.pages || "?"} ta\n\n(Tezkor yetkazildi)`
+        : `🎉 Taqdimotingiz tayyor!\n\n📌 Mavzu: ${order.topic}\n📄 Slaydlar: ${order.slides || "?"} ta\n\n(Tezkor yetkazildi)`;
+      await _bot.api.sendDocument(order.user_tg_id, cached.file_id, { caption: capC });
       updateOrder(orderId, { status: "done", file_id: cached.file_id });
       console.log(`[fulfill] #${orderId} KESHDAN yetkazildi (key=${key})`);
       return;
@@ -86,8 +92,11 @@ async function fulfillOrder(orderId) {
     let fileId = null, channelMsgId = null;
     if (config.deliveryChannelId) {
       try {
+        const channelCap = isMustaqil
+          ? `🆕 #${orderId} | 📝 Mustaqil ish | ${order.topic} | ${order.pages || "?"} bet`
+          : `🆕 #${orderId} | 🎨 Taqdimot | ${order.topic} | ${res.slideCount} slayd`;
         const sent = await _bot.api.sendDocument(config.deliveryChannelId, new InputFile(outFile), {
-          caption: `🆕 #${orderId} | ${order.topic} | ${res.slideCount} slayd`,
+          caption: channelCap,
         });
         fileId = sent.document && sent.document.file_id;
         channelMsgId = sent.message_id;
@@ -113,7 +122,7 @@ async function fulfillOrder(orderId) {
     }
 
     updateOrder(orderId, { status: "done", file_path: outFile, file_id: fileId || null });
-    console.log(`[fulfill] #${orderId} muvaffaqiyatli yetkazildi (provider=${res.usedProvider})`);
+    console.log(`[fulfill] #${orderId} muvaffaqiyatli yetkazildi (provider=${res.usedProvider || llmProvider})`);
   } catch (e) {
     updateOrder(orderId, { status: "failed" });
     console.error(`[fulfill] #${orderId} GENERATSIYA XATOSI:`, e.message);

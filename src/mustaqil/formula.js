@@ -25,39 +25,41 @@ async function initMathJax() {
   return _mj;
 }
 
-// LaTeX → PNG Buffer
+// LaTeX → PNG { buf, width, height }
 async function renderFormula(latex, display = true) {
   try {
     const { doc, adaptor } = await initMathJax();
-    const node = doc.convert(latex, { display, em: 14, ex: 7, containerWidth: 600 });
+    const node = doc.convert(latex, { display, em: 16, ex: 8, containerWidth: 1000 });
     let svg = adaptor.outerHTML(node);
 
-    // <mjx-container> tashqi tegini olib tashlash, faqat <svg>...</svg> qoldirish
+    // faqat <svg>...</svg> qoldirish (mjx-container'siz)
     const svgMatch = svg.match(/<svg[\s\S]*<\/svg>/i);
     if (svgMatch) svg = svgMatch[0];
-
-    // xmlns kafolati
     if (!/xmlns=/.test(svg)) {
       svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
     }
 
-    // SVG'ning haqiqiy nisbatini olish (ex birlikda width/height)
-    let ratio = 5; // standart: keng/baland
-    const wMatch = svg.match(/width="([\d.]+)ex"/i);
-    const hMatch = svg.match(/height="([\d.]+)ex"/i);
-    if (wMatch && hMatch && parseFloat(hMatch[1]) > 0) {
-      ratio = parseFloat(wMatch[1]) / parseFloat(hMatch[1]);
-    }
-
-    // Balandlikni 44px ga belgilaymiz (matn qatori bilan mutanosib), kenglik nisbatga qarab
-    const targetH = 44;
-    const targetW = Math.round(targetH * ratio);
-    const buf = await sharp(Buffer.from(svg))
-      .resize({ height: Math.round(targetH * 2.2), fit: "inside" }) // yuqori DPI uchun 2.2x
+    // SVG'ni yuqori aniqlikda PNG ga aylantirish (density orqali)
+    const rawPng = await sharp(Buffer.from(svg), { density: 300 })
       .flatten({ background: { r: 255, g: 255, b: 255 } })
       .png()
       .toBuffer();
-    return { buf, width: targetW, height: targetH };
+
+    // Haqiqiy piksel o'lchamlarini olish
+    const meta = await sharp(rawPng).metadata();
+    const realW = meta.width || 200;
+    const realH = meta.height || 50;
+
+    // Word'da ko'rsatish balandligini cheklash:
+    // display formula balandligi MAKS 60px (oddiy bir qatorli ~22px)
+    // Bu formula matn bilan mutanosib bo'lishini kafolatlaydi
+    const MAX_H = 60;
+    const MAX_W = 420;
+    let dispH = Math.min(realH, MAX_H);
+    let dispW = Math.round(dispH * realW / realH);
+    if (dispW > MAX_W) { dispW = MAX_W; dispH = Math.round(dispW * realH / realW); }
+
+    return { buf: rawPng, width: dispW, height: dispH };
   } catch (e) {
     console.error("[formula] MathJax xato:", e.message, "| latex:", latex.slice(0, 50));
     return fallbackFormula(latex);
