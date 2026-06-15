@@ -8,7 +8,7 @@ const pptxgen = require("pptxgenjs");
 const { getPalette } = require("./theme");
 const { generateAll, iconPath } = require("./icons");
 const { render } = require("./layouts");
-const { generateSpec } = require("./llm");
+const { generateSpecTwoPhase } = require("./llm");
 
 const ICONS_DIR = path.join(__dirname, "..", "..", "icons");
 
@@ -56,7 +56,7 @@ async function buildPresentation(spec, outFile) {
 
 // mavzu (+ ixtiyoriy kontent) -> LLM (provayder tanlovi bilan) -> spec -> .pptx
 async function generatePresentation({ topic, slides, sourceContent, extra, palette, studentName, studentGroup, llm, outFile }) {
-  const { spec, usedProvider } = await generateSpec({
+  const { spec, usedProvider } = await generateSpecTwoPhase({
     topic, slides, sourceContent, extra, studentName, studentGroup,
     provider: (llm && llm.provider) || "anthropic",
     anthropicKey: llm && llm.anthropicKey,

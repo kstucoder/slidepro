@@ -1,15 +1,17 @@
 // src/mustaqil/generate.js
 // Mustaqil ish generatsiya orkestri:
-//   Pass 1: outline (tuzilma)
-//   Pass 2: har bir bob uchun parallel kontent
-//   Render: formula + grafiklar parallel
-//   Build: docx
+//   Pass 1: outline (tuzilma + aniq boblar soni)
+//   Pass 2: har bir bob/bo'lim uchun parallel kontent (subsection-level)
+//   Pass 3: render (formula + grafiklar parallel)
+//   Pass 4: build docx
 
 const fs = require("fs");
 const path = require("path");
 const {
   outlineSystemPrompt, outlineUserPrompt, parseOutline,
   chapterSystemPrompt, chapterUserPrompt, parseChapter,
+  subsectionSystemPrompt, subsectionUserPrompt, parseSubsection,
+  chaptersForPages,
 } = require("./prompt");
 const { renderFormula } = require("./formula");
 const { renderChart } = require("./chart");
@@ -31,37 +33,37 @@ async function callLLM({ system, user, llm, maxTokens }) {
       if (name === "anthropic") {
         const res = await fetch(ANTHROPIC_URL, {
           method: "POST",
-          headers: { "content-type":"application/json","x-api-key":anthropicKey,"anthropic-version":"2023-06-01" },
-          body: JSON.stringify({ model: anthropicModel||"claude-sonnet-4-6", max_tokens: maxTokens||8000, system, messages:[{role:"user",content:user}] }),
+          headers: { "content-type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: anthropicModel || "claude-sonnet-4-6", max_tokens: maxTokens || 8000, system, messages: [{ role: "user", content: user }] }),
         });
-        if (!res.ok) { const t=await res.text(); throw new Error("Anthropic "+res.status+": "+t.slice(0,200)); }
+        if (!res.ok) { const t = await res.text(); throw new Error("Anthropic " + res.status + ": " + t.slice(0, 200)); }
         const d = await res.json();
-        return (d.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+        return (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
       } else {
         const res = await fetch(OPENAI_URL, {
           method: "POST",
-          headers: { "content-type":"application/json","authorization":"Bearer "+openaiKey },
-          body: JSON.stringify({ model: openaiModel||"gpt-4o", max_tokens: maxTokens||8000, temperature:0.7, response_format:{type:"json_object"}, messages:[{role:"system",content:system},{role:"user",content:user}] }),
+          headers: { "content-type": "application/json", authorization: "Bearer " + openaiKey },
+          body: JSON.stringify({ model: openaiModel || "gpt-4o", max_tokens: maxTokens || 8000, temperature: 0.7, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
         });
-        if (!res.ok) { const t=await res.text(); throw new Error("OpenAI "+res.status+": "+t.slice(0,200)); }
+        if (!res.ok) { const t = await res.text(); throw new Error("OpenAI " + res.status + ": " + t.slice(0, 200)); }
         const d = await res.json();
-        return (d.choices?.[0]?.message?.content||"").trim();
+        return (d.choices?.[0]?.message?.content || "").trim();
       }
-    } catch(e) { errors.push(name+": "+e.message); }
+    } catch (e) { errors.push(name + ": " + e.message); }
   }
-  throw new Error("LLM xato: "+errors.join(" | "));
+  throw new Error("LLM xato: " + errors.join(" | "));
 }
 
 // Barcha formula va grafiklarni parallel pre-render qilish
 async function prerenderMedia(chapters) {
   const tasks = [];
   chapters.forEach((ch) => {
-    (ch.content||[]).forEach((item) => {
+    (ch.content || []).forEach((item) => {
       if (item.type === "formula") {
-        tasks.push({ key: "f_"+item.number, fn: () => renderFormula(item.latex||item.display_text||"") });
+        tasks.push({ key: "f_" + item.number, fn: () => renderFormula(item.latex || item.display_text || "") });
       }
       if (item.type === "chart") {
-        tasks.push({ key: "c_"+item.number, fn: () => renderChart(item) });
+        tasks.push({ key: "c_" + item.number, fn: () => renderChart(item) });
       }
     });
   });
@@ -75,76 +77,185 @@ async function prerenderMedia(chapters) {
       console.warn("[mustaqil] render xato:", t.key, results[i].reason?.message);
     }
   });
-  console.log("[mustaqil] pre-render: "+cache.size+"/"+tasks.length+" muvaffaqiyatli");
+  console.log("[mustaqil] pre-render: " + cache.size + "/" + tasks.length + " muvaffaqiyatli");
   return cache;
+}
+
+// So'z sonini hisoblash (faqat paragraph bloklar)
+function countWords(content) {
+  return (content || [])
+    .filter((item) => item.type === "paragraph" && item.text)
+    .reduce((sum, item) => sum + (item.text || "").split(/\s+/).filter(Boolean).length, 0);
+}
+
+// Bitta subsection/chapter uchun kontent generatsiya + so'z nazorati + retry
+async function generateSectionContent({ chapter, section, outline, language, sourceContent, chapterIndex, totalChapters, llm, maxTokens, useSubsection }) {
+  const isSub = useSubsection;
+  const prompts = isSub
+    ? {
+        system: subsectionSystemPrompt(),
+        user: subsectionUserPrompt({ chapter, section, outline, language, sourceContent, chapterIndex, totalChapters }),
+      }
+    : {
+        system: chapterSystemPrompt(),
+        user: chapterUserPrompt({ chapter, outline, language, sourceContent, chapterIndex, totalChapters }),
+      };
+
+  try {
+    const text = await callLLM({ ...prompts, llm, maxTokens });
+    const parsed = isSub ? parseSubsection(text) : parseChapter(text);
+    const content = parsed.content || [];
+
+    // So'z nazorati
+    const wordTarget = section.word_target || chapter.word_target || 400;
+    const wordCount = countWords(content);
+    if (wordCount < wordTarget * 0.5) {
+      console.warn(`[mustaqil] so'z yetarli emas: ${wordCount}/${wordTarget}, qayta urinish...`);
+      const retryPrompts = {
+        system: prompts.system,
+        user: prompts.user + `\n\nMUHIM: Bu bo'lim kamida ${wordTarget} so'z bo'lishi SHART. Hozir faqat ${wordCount} so'z chiqdi. Ko'proq tafsilot, misollar, tahlil, dalillar qo'sh.`,
+      };
+      try {
+        const retryText = await callLLM({ ...retryPrompts, llm, maxTokens });
+        const retryParsed = isSub ? parseSubsection(retryText) : parseChapter(retryText);
+        return { ...chapter, content: retryParsed.content || content };
+      } catch (_) {
+        return { ...chapter, content };
+      }
+    }
+    return { ...chapter, content };
+  } catch (e) {
+    console.warn(`[mustaqil] generatsiya xato: ${e.message}`);
+    return { ...chapter, content: [{ type: "paragraph", text: (section.title || chapter.title) + " bo'limi tayyorlanishida xato yuz berdi." }] };
+  }
 }
 
 // Asosiy generatsiya funksiyasi
 async function generateMustaqilIsh({ topic, pages, language, studentName, studentGroup, org, supervisor, sourceContent, llm, outFile }) {
-  console.log("[mustaqil] boshlandi:", topic, pages+"bet");
+  const requiredChapters = chaptersForPages(pages);
+  console.log("[mustaqil] boshlandi:", topic, pages + "bet, " + requiredChapters + " bob");
 
   // ── 1-BOSQICH: OUTLINE ──────────────────────────────────
   console.log("[mustaqil] 1-pass: outline...");
   const outlineText = await callLLM({
     system: outlineSystemPrompt(),
-    user: outlineUserPrompt({ topic, pages, language, studentName, studentGroup, org, supervisor, sourceContent }),
+    user: outlineUserPrompt({ topic, pages, language, studentName, studentGroup, org, supervisor, sourceContent, requiredChapters }),
     llm,
     maxTokens: 2500,
   });
   const outline = parseOutline(outlineText);
-  // Yilni majburiy joriy yilga o'rnatish (LLM eski yil yozishi mumkin)
+  // Yilni majburiy joriy yilga o'rnatish
   if (outline.meta) outline.meta.year = String(new Date().getFullYear());
-  console.log("[mustaqil] outline: "+outline.chapters.length+" bob, target="+outline.total_words_target+" so'z");
+  console.log("[mustaqil] outline: " + outline.chapters.length + " bob (kerak: " + requiredChapters + "), target=" + outline.total_words_target + " so'z");
 
-  // ── 2-BOSQICH: CHAPTER CONTENT (parallel) ──────────────
-  console.log("[mustaqil] 2-pass: boblar parallel...");
-  // Sahifalar soniga qarab maxTokensni moslashtirish
-  // Kichik hujjat (10-15 bet) -> 4000, o'rtacha (16-25) -> 6000, katta (26-40) -> 8000
-  const maxTokensPerChapter = pages <= 15 ? 4000 : pages <= 25 ? 6000 : 8000;
-  const chapterResults = await Promise.allSettled(
-    outline.chapters.map((ch, i) =>
-      callLLM({
-        system: chapterSystemPrompt(),
-        user: chapterUserPrompt({ chapter: ch, outline, language, sourceContent, chapterIndex: i, totalChapters: outline.chapters.length }),
+  // ── 2-BOSQICH: SUBSECTION-LEVEL PARALLEL KONTENT ─────────
+  console.log("[mustaqil] 2-pass: subsection-level parallel kontent...");
+  const maxTokensPerSection = pages <= 15 ? 4000 : pages <= 25 ? 6000 : 8000;
+
+  // Barcha generatsiya qilinadigan bo'limlarni yig'ish
+  // Har bir chapter uchun: agar sections bor → subsection parallel, yo'q → chapter parallel
+  const allTasks = []; // { chapterIdx, sectionIdx, chapter, section, useSubsection }
+
+  outline.chapters.forEach((ch, chIdx) => {
+    const sections = ch.sections || [];
+    if (sections.length > 0) {
+      // Subsectionlar alohida generatsiya
+      sections.forEach((sec, secIdx) => {
+        allTasks.push({
+          chapterIdx: chIdx,
+          sectionIdx: secIdx,
+          chapter: ch,
+          section: sec,
+          useSubsection: true,
+        });
+      });
+    } else {
+      // Sections yo'q — butun chapter sifatida generatsiya
+      allTasks.push({
+        chapterIdx: chIdx,
+        sectionIdx: -1,
+        chapter: ch,
+        section: ch,
+        useSubsection: false,
+      });
+    }
+  });
+
+  console.log("[mustaqil] " + allTasks.length + " bo'lim parallel generatsiya...");
+
+  // Parallel generatsiya — barcha subsectionlarni bir vaqtda
+  const sectionResults = await Promise.allSettled(
+    allTasks.map((task) =>
+      generateSectionContent({
+        chapter: task.chapter,
+        section: task.section,
+        outline,
+        language,
+        sourceContent,
+        chapterIndex: task.chapterIdx,
+        totalChapters: outline.chapters.length,
         llm,
-        maxTokens: maxTokensPerChapter,
-      }).then((text) => {
-        const parsed = parseChapter(text);
-        // So'z sonini tekshirish — agar ancha kam bo'lsa, qayta generatsiya urinishi
-        const wordCount = (parsed.content || [])
-          .filter((item) => item.type === "paragraph" && item.text)
-          .reduce((sum, item) => sum + (item.text || "").split(/\s+/).filter(Boolean).length, 0);
-        const target = ch.word_target || 400;
-        if (wordCount < target * 0.5 && i < outline.chapters.length) {
-          console.warn(`[mustaqil] bob #${i} "${ch.title}" so'z yetarli emas: ${wordCount}/${target}, qayta urinish...`);
-          // Qayta urinish — aniqroq ko'rsatma bilan
-          return callLLM({
-            system: chapterSystemPrompt(),
-            user: chapterUserPrompt({
-              chapter: { ...ch, word_target: target },
-              outline, language, sourceContent, chapterIndex: i, totalChapters: outline.chapters.length
-            }) + `\n\nMUHIM: Bu bob kamida ${target} so'z bo'lishi SHART. Hozir faqat ${wordCount} so'z chiqdi. Ko'proq tafsilot, misollar, tahlil qo'sh.`,
-            llm,
-            maxTokens: maxTokensPerChapter,
-          }).then((retryText) => {
-            const retryParsed = parseChapter(retryText);
-            return { ...ch, content: retryParsed.content || parsed.content || [] };
-          }).catch(() => {
-            return { ...ch, content: parsed.content || [] };
-          });
-        }
-        return { ...ch, content: parsed.content || [] };
-      }).catch((e) => {
-        console.warn("[mustaqil] bob #"+i+" xato:", e.message);
-        return { ...ch, content: [{ type:"paragraph", text: ch.title+" bo'limi tayyorlanishida xato yuz berdi." }] };
+        maxTokens: maxTokensPerSection,
+        useSubsection: task.useSubsection,
       })
+        .then((result) => ({ ...task, result }))
+        .catch((e) => {
+          console.warn("[mustaqil] xato:", task.chapter.title, e.message);
+          return {
+            ...task,
+            result: { ...task.chapter, content: [{ type: "paragraph", text: (task.section.title || task.chapter.title) + " bo'limi xato." }] },
+          };
+        })
     )
   );
 
-  const chapters = chapterResults.map((r, i) =>
-    r.status === "fulfilled" ? r.value : { ...outline.chapters[i], content:[] }
-  );
-  console.log("[mustaqil] kontent tayyor");
+  // Natijalarni chapter'ga birlashtirish
+  const chapters = outline.chapters.map((ch, chIdx) => {
+    const chapterResults = sectionResults.filter(
+      (r) => r.status === "fulfilled" && r.value.chapterIdx === chIdx
+    );
+
+    if (chapterResults.length === 1 && !chapterResults[0].value.useSubsection) {
+      // Butun chapter generatsiya — to'g'ridan-to'g'ri kontent
+      return { ...ch, content: chapterResults[0].value.result.content || [] };
+    }
+
+    // Subsectionlar birlashtirish — tartib bo'yicha
+    const sorted = chapterResults.sort((a, b) => a.value.sectionIdx - b.value.sectionIdx);
+    const mergedContent = [];
+    let formulaNum = 0;
+    let chartNum = 0;
+    let tableNum = 0;
+
+    sorted.forEach((r) => {
+      const content = r.value.result.content || [];
+      content.forEach((item) => {
+        if (item.type === "heading" && item.level === 2) {
+          // Kichik sarlavhani saqlash
+          mergedContent.push(item);
+        } else if (item.type === "paragraph") {
+          mergedContent.push(item);
+        } else if (item.type === "formula") {
+          formulaNum++;
+          mergedContent.push({ ...item, number: formulaNum });
+        } else if (item.type === "chart") {
+          chartNum++;
+          mergedContent.push({ ...item, number: chartNum });
+        } else if (item.type === "table") {
+          tableNum++;
+          mergedContent.push({ ...item, number: tableNum });
+        } else {
+          mergedContent.push(item);
+        }
+      });
+    });
+
+    return { ...ch, content: mergedContent };
+  });
+
+  // Umumiy so'z hisobi
+  const totalWords = chapters.reduce((sum, ch) => sum + countWords(ch.content), 0);
+  console.log("[mustaqil] kontent tayyor: " + chapters.length + " bob, jami ≈ " + totalWords + " so'z");
 
   // ── MEDIA PRE-RENDER ────────────────────────────────────
   console.log("[mustaqil] formulalar va grafiklar render...");
@@ -158,7 +269,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   const outDir = path.dirname(outFile);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outFile, docBuf);
-  console.log("[mustaqil] tayyor:", outFile, Math.round(docBuf.length/1024)+"KB");
+  console.log("[mustaqil] tayyor:", outFile, Math.round(docBuf.length / 1024) + "KB");
 
   return { outFile, pageCount: pages, title: outline.meta?.title || topic };
 }
