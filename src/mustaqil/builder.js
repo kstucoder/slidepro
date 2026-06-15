@@ -182,95 +182,71 @@ function tableBlock(data, caption) {
 }
 
 // ─── MUQOVA SAHIFASI ────────────────────────────────────────
-// Rasmlar asosida: Vazirlik → chiziqli bo'sh joylar → MUSTAQIL ISH → Mavzu (qora) → yil
+// A4 kontent maydoni: 257mm balandlik
+// Bloklar: Vazirlik(top) → Org chiziqlar → [bo'shliq] →
+//          MUSTAQIL ISH(markazga) → Mavzu 18pt → Talaba(o'ng) → [bo'shliq] → Shahar chiziq(pastda)
 function buildCoverPage(meta) {
-  const year = meta.year || String(new Date().getFullYear());
-  const orgLine = (text, label) => new Paragraph({
-    children: [
-      new TextRun({ text: text ? (text + " ") : "", font: FONT, size: SMALL_SIZE, color: BLACK }),
-      new TextRun({ text: label, font: FONT, size: SMALL_SIZE, bold: true, color: BLACK }),
-    ],
-    alignment: AlignmentType.CENTER, spacing: { line: 280 }, indent: undefined,
+  const year  = String(new Date().getFullYear());
+  const UL28  = "_____________________________";   // 29 belgi ≈ 65mm (org chiziqlari uchun)
+  const UL22  = "_____________________";            // 22 belgi ≈ 50mm (shahar uchun)
+  const SZ14  = FONT_SIZE;                          // 14pt
+  const SZ18  = 36;                                 // 18pt = 36 half-point
+
+  // Qator yordamchi: font, o'lcham, qalinlik, rang
+  const r = (text, bold = false, size = SZ14) =>
+    new TextRun({ text, font: FONT, size, bold, color: BLACK });
+
+  // Markazlangan paragraf
+  const cp = (children, spacingOpts = {}) => new Paragraph({
+    children,
+    alignment: AlignmentType.CENTER,
+    indent: undefined,
+    spacing: { line: 280, ...spacingOpts },
   });
 
+  // O'ng tomonlama paragraf
+  const rp = (children) => new Paragraph({
+    children,
+    alignment: AlignmentType.RIGHT,
+    indent: undefined,
+    spacing: { line: 320 },
+  });
+
+  // Chiziq + label (markazda): "_____________ UNIVERSITETI"
+  const ulLine = (label) => cp([
+    r(UL28 + "  "),
+    r(label, true, SZ14),
+  ]);
+
   return [
-    ...emptyLine(2),
-    // Vazirlik nomi
-    new Paragraph({
-      children: [new TextRun({
-        text: "O'ZBEKISTON RESPUBLIKASI OLIY TA'LIM, FAN VA",
-        font: FONT, size: SMALL_SIZE, bold: true, color: BLACK,
-      })],
-      alignment: AlignmentType.CENTER, spacing: { line: 280 }, indent: undefined,
-    }),
-    new Paragraph({
-      children: [new TextRun({
-        text: "INNOVATSIYALAR VAZIRLIGI",
-        font: FONT, size: SMALL_SIZE, bold: true, color: BLACK,
-      })],
-      alignment: AlignmentType.CENTER, spacing: { line: 280, after: mm(4) }, indent: undefined,
-    }),
-    // Universiteti / Fakulteti / Kafedrasi
-    orgLine(meta.org || "", "UNIVERSITETI"),
-    new Paragraph({
-      children: [new TextRun({
-        text: "_____________________________ FAKULTETI",
-        font: FONT, size: SMALL_SIZE, color: BLACK,
-      })],
-      alignment: AlignmentType.CENTER, spacing: { line: 280 }, indent: undefined,
-    }),
-    orgLine(meta.department || "", "KAFEDRASI"),
-    ...emptyLine(3),
-    // MUSTAQIL ISH
-    new Paragraph({
-      children: [new TextRun({ text: "MUSTAQIL ISH", font: FONT, size: 36, bold: true, color: BLACK })],
-      alignment: AlignmentType.CENTER, spacing: { line: 280, after: mm(6) }, indent: undefined,
-    }),
-    ...emptyLine(2),
-    // Mavzu — qora rangda
-    new Paragraph({
-      children: [new TextRun({ text: "Mavzu: ", font: FONT, size: FONT_SIZE, color: BLACK })],
-      alignment: AlignmentType.CENTER, spacing: { line: 280 }, indent: undefined,
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `"${meta.title || ""}"`, font: FONT, size: FONT_SIZE, bold: true, color: BLACK })],
-      alignment: AlignmentType.CENTER, spacing: { line: 280 }, indent: undefined,
-    }),
-    ...emptyLine(2),
-    // Talaba ma'lumotlari (o'ng tomondan)
-    ...(meta.student_name ? [
-      new Paragraph({
-        children: [
-          new TextRun({ text: "Bajardi: ", font: FONT, size: FONT_SIZE, color: BLACK }),
-          new TextRun({ text: meta.student_name, font: FONT, size: FONT_SIZE, bold: true, color: BLACK }),
-        ],
-        alignment: AlignmentType.RIGHT, spacing: LINE_SPACING, indent: undefined,
-      }),
-    ] : []),
-    ...(meta.student_group ? [
-      new Paragraph({
-        children: [
-          new TextRun({ text: "Guruh: ", font: FONT, size: FONT_SIZE, color: BLACK }),
-          new TextRun({ text: meta.student_group, font: FONT, size: FONT_SIZE, bold: true, color: BLACK }),
-        ],
-        alignment: AlignmentType.RIGHT, spacing: LINE_SPACING, indent: undefined,
-      }),
-    ] : []),
-    ...(meta.supervisor ? [
-      new Paragraph({
-        children: [
-          new TextRun({ text: "Tekshirdi: ", font: FONT, size: FONT_SIZE, color: BLACK }),
-          new TextRun({ text: meta.supervisor, font: FONT, size: FONT_SIZE, bold: true, color: BLACK }),
-        ],
-        alignment: AlignmentType.RIGHT, spacing: LINE_SPACING, indent: undefined,
-      }),
-    ] : []),
-    ...emptyLine(4),
-    // Yil
-    new Paragraph({
-      children: [new TextRun({ text: `${meta.city || "Toshkent"} — ${year}`, font: FONT, size: FONT_SIZE, color: BLACK })],
-      alignment: AlignmentType.CENTER, spacing: { line: 280 }, indent: undefined,
-    }),
+    // ── 1. VAZIRLIK (yuqorida, 14pt qalin) ──────────────────
+    cp([r("O'ZBEKISTON RESPUBLIKASI OLIY TA'LIM, FAN VA", true)],
+      { before: mm(8) }),
+    cp([r("INNOVATSIYALAR VAZIRLIGI", true)], { after: mm(10) }),
+
+    // ── 2. TASHKILOT CHIZIQLARI ──────────────────────────────
+    ulLine("UNIVERSITETI"),
+    ulLine("FAKULTETI"),
+    ulLine("KAFEDRASI"),
+
+    // ── 3. MUSTAQIL ISH — sahifa markazida (before = katta) ──
+    // Yuqori blok ≈ 55mm → MUSTAQIL ISH ≈ 120mm dan boshlaydi (markazga yaqin)
+    cp([r("MUSTAQIL ISH", true, 36)], { before: mm(44), after: mm(14) }),
+
+    // ── 4. MAVZU — 18pt ──────────────────────────────────────
+    cp([r("Mavzu:", false, SZ18)], { before: mm(0) }),
+    cp([r('"' + (meta.title || "") + '"', true, SZ18)],
+      { before: mm(4), after: mm(18) }),
+
+    // ── 5. TALABA MA'LUMOTLARI (o'ng tomondan) ───────────────
+    rp([r("Bajardi:  "), r(meta.student_name || "____________________", true)]),
+    rp([r("Guruh:    "), r(meta.student_group || "____________________", true)]),
+    rp([r("Tekshirdi:"), r("  " + (meta.supervisor || "____________________"), true)]),
+
+    // ── 6. SHAHAR + YIL — sahifa pastida ─────────────────────
+    // before = katta qiymat → yil sahifa pastiga siqadi
+    cp([r(UL22 + " — " + year)], { before: mm(82) }),
+
     pageBreakPara(),
   ];
 }
