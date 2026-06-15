@@ -98,15 +98,41 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
 
   // ── 2-BOSQICH: CHAPTER CONTENT (parallel) ──────────────
   console.log("[mustaqil] 2-pass: boblar parallel...");
+  // Sahifalar soniga qarab maxTokensni moslashtirish
+  // Kichik hujjat (10-15 bet) -> 4000, o'rtacha (16-25) -> 6000, katta (26-40) -> 8000
+  const maxTokensPerChapter = pages <= 15 ? 4000 : pages <= 25 ? 6000 : 8000;
   const chapterResults = await Promise.allSettled(
     outline.chapters.map((ch, i) =>
       callLLM({
         system: chapterSystemPrompt(),
         user: chapterUserPrompt({ chapter: ch, outline, language, sourceContent, chapterIndex: i, totalChapters: outline.chapters.length }),
         llm,
-        maxTokens: 4000,
+        maxTokens: maxTokensPerChapter,
       }).then((text) => {
         const parsed = parseChapter(text);
+        // So'z sonini tekshirish — agar ancha kam bo'lsa, qayta generatsiya urinishi
+        const wordCount = (parsed.content || [])
+          .filter((item) => item.type === "paragraph" && item.text)
+          .reduce((sum, item) => sum + (item.text || "").split(/\s+/).filter(Boolean).length, 0);
+        const target = ch.word_target || 400;
+        if (wordCount < target * 0.5 && i < outline.chapters.length) {
+          console.warn(`[mustaqil] bob #${i} "${ch.title}" so'z yetarli emas: ${wordCount}/${target}, qayta urinish...`);
+          // Qayta urinish — aniqroq ko'rsatma bilan
+          return callLLM({
+            system: chapterSystemPrompt(),
+            user: chapterUserPrompt({
+              chapter: { ...ch, word_target: target },
+              outline, language, sourceContent, chapterIndex: i, totalChapters: outline.chapters.length
+            }) + `\n\nMUHIM: Bu bob kamida ${target} so'z bo'lishi SHART. Hozir faqat ${wordCount} so'z chiqdi. Ko'proq tafsilot, misollar, tahlil qo'sh.`,
+            llm,
+            maxTokens: maxTokensPerChapter,
+          }).then((retryText) => {
+            const retryParsed = parseChapter(retryText);
+            return { ...ch, content: retryParsed.content || parsed.content || [] };
+          }).catch(() => {
+            return { ...ch, content: parsed.content || [] };
+          });
+        }
         return { ...ch, content: parsed.content || [] };
       }).catch((e) => {
         console.warn("[mustaqil] bob #"+i+" xato:", e.message);

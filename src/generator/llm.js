@@ -149,6 +149,7 @@ async function generateSpec({ topic, slides, sourceContent, extra, studentName, 
     try {
       const spec = await callOne(name, prompts, cfg);
       ensureStructure(spec, topic); // titul + reja + xulosa + adabiyotlar kafolati
+      adjustSlideCount(spec, slides, topic); // foydalanuvchi so'ragan slayd soniga moslashtirish
       return { spec, usedProvider: name };
     } catch (e) {
       errors.push(`${name}: ${e.message}`);
@@ -156,6 +157,100 @@ async function generateSpec({ topic, slides, sourceContent, extra, studentName, 
     }
   }
   throw new Error("Barcha provayderlar muvaffaqiyatsiz:\n" + errors.join("\n"));
+}
+
+// SLAYD SONINI MOSLASHTIRISH: foydalanuvchi so'ragan N ta slayd bor
+// qilish uchun LLM javobini tahrirlash — kerak bo'lsa qo'shish yoki kesish.
+// Majburiy slaydlar: title(1), agenda(1), conclusion(1), references(1) = 4 ta
+// Qolgan N-4 ta — mazmun slaydlari.
+function adjustSlideCount(spec, targetSlides, topic) {
+  const FIXED = 4; // title + agenda + conclusion + references
+  const MIN_CONTENT = 0; // kamida 0 ta mazmun slaydi bo'lishi mumkin
+  const targetTotal = Math.max(targetSlides || 10, FIXED); // kamida 4 ta
+
+  let slides = spec.slides;
+  if (!Array.isArray(slides) || slides.length === 0) return;
+
+  // Majburiy slaydlar layoutlarini belgilash
+  const SKIP = new Set(["title", "agenda", "conclusion", "references"]);
+
+  let contentSlides = slides.filter((s) => !SKIP.has(s.layout));
+  let fixedSlides = slides.filter((s) => SKIP.has(s.layout));
+
+  const currentTotal = slides.length;
+
+  // --- AGAR KAM SLAYD KELDI ---
+  if (currentTotal < targetTotal) {
+    // Mazmun slaydlarini qo'shish
+    const contentLayouts = ["stat-callout", "objectives", "steps", "feature-grid", "layers", "split-list", "dual-column", "metrics", "chart"];
+    let lastUsed = 0;
+    const toAdd = targetTotal - currentTotal;
+    for (let i = 0; i < toAdd; i++) {
+      const layout = contentLayouts[lastUsed % contentLayouts.length];
+      lastUsed++;
+      const addSlide = {
+        layout,
+        title: `${topic} — qo'shimcha ${i + 1}`,
+        icon: "info",
+      };
+      // Layoutga mos minimal maydonlar
+      if (layout === "stat-callout") {
+        addSlide.stat = { label: "Muhim", value: "—", desc: "Tegishli ma'lumot" };
+        addSlide.items = [];
+      } else if (layout === "objectives") {
+        addSlide.items = [
+          { icon: "check", title: "Nuqta 1", desc: "Batafsil tavsif" },
+          { icon: "check", title: "Nuqta 2", desc: "Batafsil tavsif" },
+          { icon: "check", title: "Nuqta 3", desc: "Batafsil tavsif" },
+          { icon: "check", title: "Nuqta 4", desc: "Batafsil tavsif" },
+        ];
+      } else if (layout === "feature-grid") {
+        addSlide.items = [
+          { icon: "check", title: "Xususiyat 1", desc: "Tavsif berilgan" },
+          { icon: "check", title: "Xususiyat 2", desc: "Tavsif berilgan" },
+          { icon: "check", title: "Xususiyat 3", desc: "Tavsif berilgan" },
+          { icon: "check", title: "Xususiyat 4", desc: "Tavsif berilgan" },
+        ];
+      } else {
+        addSlide.intro = "Mavzuga oid qo'shimcha ma'lumot.";
+        addSlide.items = [];
+      }
+      contentSlides.push(addSlide);
+    }
+    console.log(`[llm] adjustSlideCount: ${currentTotal} -> ${targetTotal} (${toAdd} qo'shildi)`);
+  }
+
+  // --- AGAR KO'P SLAYD KELDI ---
+  if (contentSlides.length + fixedSlides.length > targetTotal) {
+    const excess = (contentSlides.length + fixedSlides.length) - targetTotal;
+    if (excess > 0 && contentSlides.length > excess) {
+      contentSlides = contentSlides.slice(0, contentSlides.length - excess);
+    }
+    console.log(`[llm] adjustSlideCount: ${currentTotal} -> ${targetTotal} (${excess} kesildi)`);
+  }
+
+  // Tartib: title, agenda, ...content..., conclusion, references
+  const titleSlide = fixedSlides.find((s) => s.layout === "title");
+  const agendaSlide = fixedSlides.find((s) => s.layout === "agenda");
+  const conclusionSlide = fixedSlides.find((s) => s.layout === "conclusion");
+  const referencesSlide = fixedSlides.find((s) => s.layout === "references");
+
+  const result = [];
+  if (titleSlide) result.push(titleSlide);
+  if (agendaSlide) result.push(agendaSlide);
+  result.push(...contentSlides);
+  if (conclusionSlide) result.push(conclusionSlide);
+  if (referencesSlide) result.push(referencesSlide);
+
+  // Qolgan qo'shimcha slaydlar (noma'lum layout'li fixed)
+  fixedSlides
+    .filter((s) => !result.includes(s))
+    .forEach((s) => result.splice(2, 0, s));
+
+  spec.slides = result;
+
+  // Dublikatlarni yana tekshirish
+  spec.slides = breakConsecutiveDuplicates(spec.slides);
 }
 
 module.exports = { generateSpec };
