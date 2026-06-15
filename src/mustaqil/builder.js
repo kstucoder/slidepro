@@ -245,9 +245,8 @@ function buildCoverPage(meta) {
 
     // ── 6. SHAHAR + YIL — sahifa pastida ─────────────────────
     // before = katta qiymat → yil sahifa pastiga siqadi
+    // pageBreakPara yo'q — section2 NEXT_PAGE o'zi sahifa almashtiradi
     cp([r(UL22 + " — " + year)], { before: mm(70) }),
-
-    pageBreakPara(),
   ];
 }
 
@@ -374,6 +373,7 @@ function buildReferences(refs = []) {
         new TextRun({ text: `${i + 1}. `, font: FONT, size: FONT_SIZE, bold: true, color: BLACK }),
         new TextRun({ text: cleanInlineLatex(ref), font: FONT, size: FONT_SIZE, color: BLACK }),
       ],
+      alignment: AlignmentType.JUSTIFIED,
       spacing: { ...LINE_SPACING, before: mm(1) },
       indent: { left: mm(10), hanging: mm(10) },
     }));
@@ -428,7 +428,7 @@ async function buildDocument(fullSpec, pngCache) {
       // 2+ sahifa: REJA + kontent — raqamlash 2-dan
       {
         properties: {
-          type: SectionType.CONTINUOUS,
+          type: SectionType.NEXT_PAGE,
           page: {
             margin: { left: mm(30), right: mm(15), top: mm(20), bottom: mm(20) },
             pageNumbers: { start: 2, formatType: NumberFormat.DECIMAL },
