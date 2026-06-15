@@ -58,9 +58,7 @@ async function fulfillOrder(orderId) {
 
   // 2) YANGI GENERATSIYA
   try {
-    await _bot.api.sendMessage(order.user_tg_id, isMustaqil
-      ? "✅ To'lov tasdiqlandi! Mustaqil ishingiz tayyorlanmoqda, biroz kuting..."
-      : "✅ To'lov tasdiqlandi! Taqdimotingiz tayyorlanmoqda, biroz kuting...");
+    await _bot.api.sendMessage(order.user_tg_id, "✅ To'lov tasdiqlandi! Taqdimotingiz tayyorlanmoqda, biroz kuting...");
   } catch (e) {}
 
   const outDir = path.join(__dirname, "..", "..", "output");
@@ -129,9 +127,7 @@ async function fulfillOrder(orderId) {
     updateOrder(orderId, { status: "failed" });
     console.error(`[fulfill] #${orderId} GENERATSIYA XATOSI:`, e.message);
     try {
-      await _bot.api.sendMessage(order.user_tg_id, isMustaqil
-        ? "⚠️ Mustaqil ish yaratishda xatolik yuz berdi. Administrator bilan bog'laning."
-        : "⚠️ Taqdimot yaratishda xatolik yuz berdi. Administrator bilan bog'laning.");
+      await _bot.api.sendMessage(order.user_tg_id, "⚠️ Taqdimot yaratishda xatolik yuz berdi. Administrator bilan bog'laning.");
     } catch (_) {}
     notifyAdmins(`❌ Buyurtma #${orderId} generatsiyada xato: ${e.message}`);
   }

@@ -20,24 +20,60 @@ const LINE_SPACING = { line: 360, lineRule: "auto" };  // 1.5
 const INDENT = mm(12.5);     // 1.25 sm
 const BLACK = "000000";
 
-// ─── inline LaTeX tozalash ─────────────────────────────────
+// ─── inline LaTeX tozalash (sarlavha/izoh uchun — matn qaytaradi) ──
 function cleanInlineLatex(text) {
   if (!text) return "";
   let t = String(text);
-  // 1) Taniqli LaTeX delimiter'lar: \(...\), \[...\], $...$
   t = t.replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\$([^$]+?)\$/g, (_, m) => latexToUnicode(m));
-  // 2) Qolgan LaTeX buyruqlari (delimiter'siz)
   if (/\\[a-zA-Z]+|[_^]\{/.test(t)) t = latexToUnicode(t);
-  // 3) Delimiter'siz pastki chiziqli o'zgaruvchilar:
-  //    X_1  → X₁   (raqamli subscript)
-  //    P_yangi → Pyangi  (so'zli subscript — chiziq olib tashlanadi)
+  // Qolgan X_n → X₁, X_word → Xword (sarlavha uchun yetarli)
   const subMap = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉'};
   t = t.replace(/([A-Za-z])_([0-9])/g, (_, b, d) => b + (subMap[d] || d));
   t = t.replace(/([A-Za-z])_([a-zA-Z][a-zA-Z0-9]*)/g, '$1$2');
   return t;
+}
+
+// ─── paragraf uchun: TextRun[] qaytaradi, X_sub → haqiqiy Word subscript ──
+function parseTextRuns(rawText) {
+  if (!rawText) return [new TextRun({ text: "", font: FONT, size: FONT_SIZE, color: BLACK })];
+  let t = String(rawText);
+
+  // 1) LaTeX delimiter'lar → latexToUnicode
+  t = t.replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => latexToUnicode(m));
+  t = t.replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => latexToUnicode(m));
+  t = t.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => latexToUnicode(m));
+  t = t.replace(/\$([^$]+?)\$/g, (_, m) => latexToUnicode(m));
+  if (/\\[a-zA-Z]+/.test(t)) t = latexToUnicode(t);
+
+  // 2) X_sub, X_{sub}, X^sup, X^{sup} → Word TextRun with subScript/superScript
+  const runs = [];
+  // Pattern: base harf + subscript yoki superscript
+  const re = /([A-Za-z])(?:_\{([^}]{1,20})\}|_([a-zA-Z][a-zA-Z0-9]{0,15}|[0-9]{1,3})|\^\{([^}]{1,20})\}|\^([a-zA-Z0-9]{1,10}))/g;
+  let last = 0, m;
+  while ((m = re.exec(t)) !== null) {
+    // Mos kelishidan oldingi oddiy matn
+    if (m.index > last) {
+      runs.push(new TextRun({ text: t.slice(last, m.index), font: FONT, size: FONT_SIZE, color: BLACK }));
+    }
+    // Asosiy harf
+    runs.push(new TextRun({ text: m[1], font: FONT, size: FONT_SIZE, color: BLACK }));
+    const sub = m[2] != null ? m[2] : m[3]; // _{ } yoki _x
+    const sup = m[4] != null ? m[4] : m[5]; // ^{ } yoki ^x
+    if (sub != null) {
+      runs.push(new TextRun({ text: sub, font: FONT, size: FONT_SIZE, subScript: true, color: BLACK }));
+    } else if (sup != null) {
+      runs.push(new TextRun({ text: sup, font: FONT, size: FONT_SIZE, superScript: true, color: BLACK }));
+    }
+    last = m.index + m[0].length;
+  }
+  // Qolgan matn
+  if (last < t.length) {
+    runs.push(new TextRun({ text: t.slice(last), font: FONT, size: FONT_SIZE, color: BLACK }));
+  }
+  return runs.length > 0 ? runs : [new TextRun({ text: t, font: FONT, size: FONT_SIZE, color: BLACK })];
 }
 
 function latexToUnicode(s) {
@@ -76,8 +112,14 @@ function run(text, opts = {}) {
 }
 
 function para(text, opts = {}) {
+  // parseTextRuns ishlatiladi: X_sub → Word subscript, X^sup → superscript
+  const runs = parseTextRuns(String(text || ""));
+  // bold/italic opts qo'llash kerak bo'lsa — barcha runlarga qo'shamiz
+  if (opts.bold || opts.italic) {
+    runs.forEach(r => { if (opts.bold) r.bold = true; if (opts.italic) r.italics = true; });
+  }
   return new Paragraph({
-    children: [run(text, opts)],
+    children: runs,
     spacing: LINE_SPACING,
     alignment: opts.align || AlignmentType.JUSTIFIED,
     indent: opts.noIndent ? undefined : { firstLine: INDENT },
