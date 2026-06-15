@@ -62,6 +62,7 @@ Quyidagi JSON strukturasida qaytargin:
       "formula_count": 0,
       "chart_count": 0,
       "table_count": 0,
+      "formula_latex": [],
       "sections": []
     },
     {
@@ -72,9 +73,21 @@ Quyidagi JSON strukturasida qaytargin:
       "formula_count": <raqam>,
       "chart_count": <raqam>,
       "table_count": <raqam>,
+      "formula_latex": [<formula ro'yxati>],
       "sections": [
         {"id":"ch1_1","title":"<kichik bo'lim nomi>","level":2,"word_target":<raqam>}
       ]
+    },
+    {
+      "id": "conclusion",
+      "title": "Xulosa",
+      "level": 1,
+      "word_target": <raqam>,
+      "formula_count": 0,
+      "chart_count": 0,
+      "table_count": 0,
+      "formula_latex": [],
+      "sections": []
     }
   ],
   "references": [
@@ -84,13 +97,14 @@ Quyidagi JSON strukturasida qaytargin:
 }
 
 QOIDALAR:
-- Kirish: 150-250 so'z, formula_count:0, chart_count:0
-- Xulosa: 200-350 so'z, formula_count:0, chart_count:0
-- Asosiy bo'limlar: sahifalar soniga mutanosib (${pages <= 15 ? "1-2" : pages <= 25 ? "2-3" : "3-4"} ta asosiy bo'lim), har biri kichik bo'limlari bilan
+- Kirish (id="intro"): 150-250 so'z, formula_count:0, chart_count:0, table_count:0. Faqat mavzuning dolzarbligi, maqsad, vazifalar, uslub, tuzilma haqida.
+- Xulosa (id="conclusion"): 200-350 so'z, formula_count:0, chart_count:0, table_count:0. Faqat natijalar, xulosa, tavsiyalar, istiqbol. YANGI nazariy ma'lumotlar, tariflar BO'LMAYDI.
+- Asosiy bo'limlar (id="ch1", "ch2", ...): sahifalar soniga mutanosib (${pages <= 15 ? "1-2" : pages <= 25 ? "2-3" : "3-4"} ta asosiy bo'lim), har biri kichik bo'limlari bilan
+- MUHIM: Tuzilma DAIM Kirish → Asosiy bo'limlar → Xulosa tartibida bo'lishi kerak. Faqat 1 ta Kirish, faqat 1 ta Xulosa.
 - MUHIM: chapter title'larda "bob" so'zi ISHLATMA. Faqat bo'lim nomi yoz
 - Har asosiy bo'lim BOSHQA JIHATNI yoritsin (nazariy/amaliy/taqqoslov/prognoz) — takrorlanmasin
 - word_target'lar yig'indisi ≈ ${totalWords} ga teng bo'lsin
-- Formulalar: FAQAT aniq fanlar mavzularida (matematika, fizika, kimyo, muhandislik, iqtisodiyot, kompyuter fanlari, biologiya, kimyoviy texnologiya) — u holda har asosiy bob uchun 1-3 ta mavzuga mos formula. Gumanitar, ijtimoiy, tarixiy, ekologik-umumiy mavzularda formula_count:0 bo'lsin. Mavzuning o'ziga qarab hal qil.
+- Formulalar: FAQAT aniq fanlar mavzularida (matematika, fizika, kimyo, muhandislik, iqtisodiyot, kompyuter fanlari, biologiya, kimyoviy texnologiya) — u holda har asosiy bob uchun 1-3 ta mavzuga mos formula. Gumanitar, ijtimoiy, tarixiy, ekologik-umumiy mavzularda formula_count:0 bo'lsin. Mavzuning o'ziga qarab hal qil. MUHIM: Har bir bobning formulalari BOSHQA BOBLARDA ISHLATILMAGAN va takrorlanmagan formula bo'lishi kerak. Har bir bob uchun formula_latex maydoni qo'shing — bu yerda bobda ishlatiladigan formulalar ro'yxati ko'rsatiladi (masalan, ["E = mc^2", "F = ma"]).
 - Grafiklar: har asosiy bob uchun kamida 1 ta grafik (bar/line/pie) — realistik ma'lumotlar bilan
 - Jadvallar: kamida 1 ta ixtiyoriy bob uchun
 - references: 8-12 ta manba, APA 7 formatida. FAQAT HAQIQIY, MAVJUD ASARLAR:
@@ -104,7 +118,7 @@ QOIDALAR:
 }
 
 function parseOutline(text) {
-  const clean = text.replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
+  const clean = text.replace(/^\`\`\`json\s*/i,"").replace(/^\`\`\`\s*/i,"").replace(/\`\`\`\s*$/i,"").trim();
   try { return JSON.parse(clean); }
   catch(e) {
     const s=clean.indexOf("{"), end=clean.lastIndexOf("}");
@@ -118,7 +132,7 @@ function chapterSystemPrompt() {
   return `Sen akademik mustaqil ish yozuvchisi mutaxassissan. FAQAT to'g'ri JSON qaytarasan — hech qanday izoh, markdown, backtick yo'q. Akademik, rasmiy, chuqur tahliliy uslubda yoz.`;
 }
 
-function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterIndex, totalChapters }) {
+function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterIndex, totalChapters, usedFormulas = [] }) {
   const lang = language || "o'zbek";
   const wt = chapter.word_target || 400;
   const paraCount = Math.max(4, Math.ceil(wt / 110));
@@ -126,6 +140,31 @@ function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterI
     ? `\nManba kontent (asosiy g'oyalar shunga asoslansin):\n---\n${sourceContent.slice(0,2000)}\n---`
     : "";
   const allTitles = outline.chapters.map((c,i) => `${i+1}. ${c.title}`).join("\n");
+
+  // Determine chapter type based on position and ID
+  const isIntro = chapter.id === "intro" || chapterIndex === 0;
+  const isConclusion = chapter.id === "conclusion" || chapter.id === "xulosa" || chapterIndex === totalChapters - 1;
+  const isMainBody = !isIntro && !isConclusion;
+
+  // Collect formulas from other chapters to explicitly ban them
+  const otherFormulas = outline.chapters
+    .filter((c, idx) => idx !== chapterIndex && c.formula_latex && c.formula_latex.length > 0)
+    .map(c => c.formula_latex)
+    .flat();
+
+  const formulaBanList = otherFormulas.length > 0 
+    ? `\n\nTAKRORLANISHI TA'QIQLANGAN FORMULALAR (boshqa boblarda ishlatilgan):\n${otherFormulas.map((f, i) => `${i+1}. ${f}`).join("\n")}\nBU FORMULALARNI TAKRORLASH MUMKIN EMAS. YANGI, BOSHQA FORMULA ISHLAT.`
+    : "";
+
+  // Chapter-specific content instructions
+  let chapterTypeInstructions = "";
+  if (isIntro) {
+    chapterTypeInstructions = `\n\n=== BU BOB TURI: KIRISH (INTRODUCTION) ===\nBU BOB — KIRISH. Quyidagilarni YOZGIN:\n- Mavzuning dolzarbligi va ahamiyati\n- Tadqiqot ob'ekti va predmeti\n- Asosiy maqsad va vazifalar (RO'YXAT shaklida, 3-5 ta)\n- Tadqiqot uslubi (qanday usulda o'rganildi)\n- Ishning tuzilmasi qanday (qaysi bobda nima bor)\n- KIRISHDA: formula, grafik, jadval BO'LMAYDI\n- KIRISHDA: "xulosa", "natija", "tavsiya" so'zlari ISHLATILMASIN\n- KIRISHDA: boshqa boblarning tahlili yoki xulosasi BO'LMAYDI`;
+  } else if (isConclusion) {
+    chapterTypeInstructions = `\n\n=== BU BOB TURI: XULOSA (CONCLUSION) ===\nBU BOB — XULOSA. Quyidagilarni YOZGIN:\n- Asosiy natijalar (RO'YXAT shaklida, 3-5 ta)\n- Tadqiqot xulosasi (qisqa, aniq)\n- Amaliy tavsiyalar (agar mavjud bo'lsa)\n- Mavzuning kelajakdagi rivojlanish istiqbollari\n- XULOSADA: yangi formula, grafik, jadval BO'LMAYDI\n- XULOSADA: "kirish", "mavzu tanlash sababi", "maqsad" so'zlari ISHLATILMASIN\n- XULOSADA: mavzuning umumiy ta'rifi yoki tarixi BO'LMAYDI`;
+  } else {
+    chapterTypeInstructions = `\n\n=== BU BOB TURI: ASOSIY BOB (MAIN BODY) ===\nBU BOB — ASOSIY MAZMUN. Quyidagilarni YOZGIN:\n- Mavzuning ushbu jihatini chuqur tahlil qilish\n- Nazariy asoslar\n- Amaliy misollar, statistika, taqqoslash\n- Formulalar (agar formula_count > 0)\n- Grafiklar (agar chart_count > 0)\n- Jadvallar (agar table_count > 0)\n- ASOSIY BOBDA: "kirishda aytilganidek", "xulosa qilib aytganda", "mavzuning ahamiyati" kiboralar BO'LMAYDI\n- ASOSIY BOBDA: faqat ushbu bobga tegishli kontent bo'lishi kerak`;
+  }
 
   return `Mustaqil ish uchun bob kontentini yarat.
 
@@ -140,7 +179,7 @@ Jadvallar: ${chapter.table_count || 0} ta
 
 Umumiy tuzilma:
 ${allTitles}
-${contentNote}
+${contentNote}${formulaBanList}${chapterTypeInstructions}
 
 Quyidagi JSON qaytargin:
 {
@@ -154,7 +193,7 @@ Content bloklari turlari:
    - Har paragraf: ANIQ FAKT yoki STATISTIKA → TAHLIL → XULOSA (3 qism)
    - Misol: "2023-yil NASA ma'lumotlariga ko'ra, Yer o'rtacha harorat 1.1°C oshdi. Bu ko'rsatkich..."
    - KERAKSIZ TAKROR: bir xil jumlani boshqacha yozma. Har paragraf YANGI g'oya olib kelsin.
-   
+
 2. Kichik sarlavha: {"type":"heading","level":2,"text":"1.1. ..."}
 
 3. Formula (agar formula_count > 0 — faqat aniq fan mavzularida):
@@ -162,11 +201,14 @@ Content bloklari turlari:
    - Formuladan OLDIN (2-3 jumla) va KEYIN (2-3 jumla) MAVZUGA ANIQ ALOQADOR izoh
    - Umumiy "E=mc²" kabi emas — AYNAN shu mavzu uchun zarur formula
    - Gumanitar/ijtimoiy mavzularda formula_count=0 bo'lsa bu blok umuman yo'q
-   
+   - HAR BIR BOBDA BOSHQA BOBLARDA ISHLATILMAGAN yangi formula ishlat. Takrorlangan formula qaytarilmasin.
+   - Agar 2 ta formula bo'lsa, ular bir-birini to'ldiruvchi, lekin TURli formulalar bo'lishi kerak (masalan, birida asosiy tenglama, ikkinchisida uning tahlili yoki qo'llanishi).
+   - TAKRORLANISHI TA'QIQLANGAN: ${otherFormulas.join(", ") || "hali ma'lum emas"}
+
 4. Grafik (agar chart_count > 0):
    {"type":"chart","chartType":"bar|line|pie","title":"...","labels":["..."],"values":[...],"unit":"","caption":"N-rasm. ...","number":1}
    - Haqiqiy, aniq raqamlar (realistik ma'lumotlar)
-   
+
 5. Jadval (agar table_count > 0):
    {"type":"table","caption":"N-jadval. ...","number":1,"headers":["..."],"rows":[["..."]]}
 
@@ -178,11 +220,12 @@ SIFAT QOIDALARI (bular muhim!):
 - Muallif ovozi: shaxsiy kuzatuv, taqqoslash, tanqidiy baho bo'lsin
 - Paragraflar birgalikda KAMIDA ${wt} so'z bo'lsin
 - LaTeX VA PASTKI CHIZIQ (_) paragraf matnida BO'LMASIN
+- TAKRORLASHNI OLDINI OLISH: har bir paragraf avvalgi paragrafdan YANGI ma'lumot olib kelsin. Avvalgi paragrafni qayta yozib, boshqacha so'zlar bilan aytib yuborish TAKRORLASH hisoblanadi va TA'QIQLANADI.
 - Faqat JSON qaytar`;
 }
 
 function parseChapter(text) {
-  const clean = text.replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
+  const clean = text.replace(/^\`\`\`json\s*/i,"").replace(/^\`\`\`\s*/i,"").replace(/\`\`\`\s*$/i,"").trim();
   try { return JSON.parse(clean); }
   catch(e) {
     const s=clean.indexOf("{"), end=clean.lastIndexOf("}");
