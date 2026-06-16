@@ -12,6 +12,10 @@ const {
   outlineSystemPrompt, outlineUserPrompt, parseOutline,
   chapterSystemPrompt, chapterUserPrompt, parseChapter, wordsForPages,
   collectUsedFormulasAndCharts,
+  normalizeFormula, formulaSignature,
+  normalizeChartPurpose,
+  paragraphSimilarity,
+  detectForbiddenIntroConclusion,
 } = require("./prompt");
 const { renderFormula } = require("./formula");
 const { renderChart }   = require("./chart");
@@ -95,20 +99,45 @@ function buildBanLists(outline, chapterIdx) {
   };
 }
 
+// Formulalar va grafiklarni QAYTA RAQAMLASH:
+// LLM har bob uchun mustaqil ravishda number:1, number:2 qaytaradi —
+// natijada bir xil kesh kaliti ("c_1") bir nechta turli rasmga ishora qiladi.
+// Bu funksiya butun hujjat bo'ylab unikal raqamlar beradi: 1, 2, 3, ...
+function renumberMedia(chapters) {
+  let fNum = 0, cNum = 0, tNum = 0;
+  chapters.forEach(ch => {
+    (ch.content || []).forEach(item => {
+      if (item.type === "formula") item.number = ++fNum;
+      else if (item.type === "chart") item.number = ++cNum;
+      else if (item.type === "table") item.number = ++tNum;
+    });
+  });
+}
+
 // Media pre-render (formula + grafik parallel)
 async function prerenderMedia(chapters) {
   const tasks = [];
-  chapters.forEach(ch => {
-    (ch.content||[]).forEach(item => {
-      if (item.type==="formula") tasks.push({ key:"f_"+item.number, fn:()=>renderFormula(item.latex||item.display_text||"") });
-      if (item.type==="chart")   tasks.push({ key:"c_"+item.number, fn:()=>renderChart(item) });
+  chapters.forEach((ch, chIdx) => {
+    (ch.content || []).forEach(item => {
+      // KESH KALITI: bob indeksi + raqam + element turidagi indeks
+      // → har bir blok unikal kalit oladi, hech qachon almashinmaydi
+      if (item.type === "formula") {
+        const key = `f_${chIdx}_${item.number}`;
+        item._mediaKey = key;
+        tasks.push({ key, fn: () => renderFormula(item.latex || item.display_text || "") });
+      }
+      if (item.type === "chart") {
+        const key = `c_${chIdx}_${item.number}`;
+        item._mediaKey = key;
+        tasks.push({ key, fn: () => renderChart(item) });
+      }
     });
   });
   if (!tasks.length) return new Map();
-  const res = await Promise.allSettled(tasks.map(t=>t.fn()));
+  const res = await Promise.allSettled(tasks.map(t => t.fn()));
   const cache = new Map();
-  tasks.forEach((t,i)=>{ if(res[i].status==="fulfilled"&&res[i].value) cache.set(t.key,res[i].value); });
-  console.log("[mustaqil] render:", cache.size+"/"+tasks.length);
+  tasks.forEach((t, i) => { if (res[i].status === "fulfilled" && res[i].value) cache.set(t.key, res[i].value); });
+  console.log("[mustaqil] render:", cache.size + "/" + tasks.length);
   return cache;
 }
 
@@ -188,7 +217,22 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
         llm, maxTokens: 6000,
       }).then(t => {
         const p = parseChapter(t);
-        return { ...ch, content: p.content || [] };
+        let content = p.content || [];
+        // Asosiy boblarda "Kirish/Xulosa/Yakun" kichik bo'limlari TA'QIQLANGAN
+        const isMain = ch.id !== "intro" && ch.id !== "conclusion";
+        if (isMain) {
+          content = content.filter(item => {
+            if (item.type === "heading") {
+              const t = String(item.text || "").toLowerCase().replace(/^\d+(\.\d+)?\.\s*/, "");
+              if (/^(kirish|xulosa|yakun|umumlashtirish)\b/i.test(t)) {
+                console.log(`[mustaqil] '${ch.title}' ichidan "${item.text}" sarlavhasi olib tashlandi`);
+                return false;
+              }
+            }
+            return true;
+          });
+        }
+        return { ...ch, content };
       }).catch(e => {
         console.warn("[mustaqil] bob #"+i+" xato:", e.message);
         return { ...ch, content:[] };
@@ -196,6 +240,170 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
     })
   );
   let chapters = results.map((r,i) => r.status==="fulfilled" ? r.value : {...outline.chapters[i],content:[]});
+
+  // ── VALIDATSIYA: takror formula/grafik, asosiy bobda kirish/xulosa ──
+  // State tracking (faqat shu generatsiya uchun):
+  const state = {
+    usedFormulaSigs:  new Map(),  // signature → {chIdx, latex}
+    usedChartKeys:    new Map(),  // purpose key → {chIdx, title}
+    paragraphPool:    [],          // {chIdx, text}
+    violations:       [],
+  };
+
+  function scanChapter(ch, chIdx) {
+    const issues = [];
+    (ch.content || []).forEach((item, i) => {
+      if (item.type === "formula" && item.latex) {
+        const sig = normalizeFormula(item.latex);
+        if (sig && state.usedFormulaSigs.has(sig)) {
+          const prev = state.usedFormulaSigs.get(sig);
+          issues.push({ kind: "formula_dup", item, prev, idx: i });
+        } else if (sig) {
+          state.usedFormulaSigs.set(sig, { chIdx, latex: item.latex });
+        }
+      }
+      if (item.type === "chart") {
+        const purpose = normalizeChartPurpose(item);
+        if (purpose && state.usedChartKeys.has(purpose)) {
+          const prev = state.usedChartKeys.get(purpose);
+          issues.push({ kind: "chart_dup", item, prev, idx: i });
+        } else if (purpose) {
+          state.usedChartKeys.set(purpose, { chIdx, title: item.title });
+        }
+      }
+      if (item.type === "paragraph" && item.text) {
+        // Boshqa bob paragraflari bilan o'xshashlik
+        for (const p of state.paragraphPool) {
+          if (p.chIdx !== chIdx) {
+            const sim = paragraphSimilarity(item.text, p.text);
+            if (sim > 0.55) {  // 55%+ o'xshashlik = takror
+              issues.push({ kind: "paragraph_dup", item, prev: p, similarity: sim, idx: i });
+              break;
+            }
+          }
+        }
+        state.paragraphPool.push({ chIdx, text: item.text });
+      }
+    });
+    // Forbidden intro/conclusion in main chapter
+    const role = ch.role || (ch.id==="intro"?"introduction":ch.id==="conclusion"?"conclusion":"theory");
+    const forbidden = detectForbiddenIntroConclusion(ch.content, role);
+    forbidden.forEach(v => issues.push({ kind: "forbidden_intro_conclusion", item: v, role }));
+    return issues;
+  }
+
+  // 1-VALIDATSIYA: barcha boblarni skanlash
+  chapters.forEach((ch, idx) => {
+    const issues = scanChapter(ch, idx);
+    if (issues.length > 0) {
+      state.violations.push({ chIdx: idx, title: ch.title, issues });
+    }
+  });
+
+  // QAYTA GENERATSIYA: faqat muammoli boblarni
+  if (state.violations.length > 0) {
+    console.log("[mustaqil] validatsiya:", state.violations.length, "ta bobda muammo topildi");
+    state.violations.forEach(v => {
+      const types = v.issues.map(i => i.kind).join(", ");
+      console.log(`  - '${v.title}': ${v.issues.length} ta muammo (${types})`);
+    });
+
+    // Faqat takrorli formula/chart bo'lgan boblarni qayta so'rash (forbidden intro/conclusion filterlanadi)
+    const needRegen = state.violations.filter(v =>
+      v.issues.some(i => i.kind === "formula_dup" || i.kind === "chart_dup" || i.kind === "paragraph_dup")
+    );
+
+    if (needRegen.length > 0) {
+      console.log("[mustaqil] qayta generatsiya:", needRegen.length, "ta bob");
+
+      // To'liq ban-list (barcha boblardagi haqiqiy formula/chart)
+      const allFormulas = [...state.usedFormulaSigs.values()].map(v=>v.latex);
+      const allCharts   = [...state.usedChartKeys.values()].map(v=>v.title);
+
+      const regenRes = await Promise.allSettled(
+        needRegen.map(({ chIdx, title }) => {
+          const ch = chapters[chIdx];
+          // Bu bobning o'z formula/chart'ini ban-listdan chiqarish
+          const thisCh = chapters[chIdx];
+          const thisF = (thisCh.content||[]).filter(b=>b.type==="formula").map(b=>b.latex);
+          const thisC = (thisCh.content||[]).filter(b=>b.type==="chart").map(b=>b.title);
+          const finalFBan = allFormulas.filter(f => !thisF.includes(f));
+          const finalCBan = allCharts.filter(c => !thisC.includes(c));
+
+          // Kuchaytirilgan ban-list bilan qayta chaqirish
+          return callLLM({
+            system: chapterSystemPrompt(),
+            user: chapterUserPrompt({
+              chapter: ch, outline, language: lang, sourceContent,
+              chapterIndex: chIdx, totalChapters: outline.chapters.length,
+              usedFormulas: finalFBan, usedCharts: finalCBan,
+            }) + `\n\n⚠️ AVVALGI URINISH MUAMMOLI EDI — quyidagi formula/grafiklar BOSHQA boblarda ishlatilgan, AYNAN SHULARNI ISHLATMA:\n${finalFBan.length?"Formulalar: "+finalFBan.join(", ")+"\n":""}${finalCBan.length?"Grafiklar: "+finalCBan.join(", "):""}\n\nButunlay BOSHQA matematik konsept va boshqa ma'lumotli grafik ishlat.`,
+            llm, maxTokens: 6000,
+          }).then(t => {
+            const p = parseChapter(t);
+            let content = p.content || [];
+            // Yana intro/conclusion filtri (asosiy boblar uchun)
+            const role = ch.role || (ch.id==="intro"?"introduction":ch.id==="conclusion"?"conclusion":"theory");
+            if (role !== "introduction" && role !== "conclusion") {
+              content = content.filter(item => {
+                if (item.type === "heading") {
+                  const t = String(item.text||"").replace(/^\d+(\.\d+)?\.\s*/, "");
+                  if (/^(kirish|xulosa|yakun|umumlashtirish)\b/i.test(t)) return false;
+                }
+                return true;
+              });
+            }
+            return { chIdx, content };
+          }).catch(e => {
+            console.warn("[mustaqil] qayta gen #"+chIdx+" xato:", e.message);
+            return { chIdx, content: null };
+          });
+        })
+      );
+
+      // Natijalarni qo'llash
+      regenRes.forEach(r => {
+        if (r.status === "fulfilled" && r.value.content) {
+          chapters[r.value.chIdx] = { ...chapters[r.value.chIdx], content: r.value.content };
+        }
+      });
+
+      // State'ni qayta qurish (qayta gen'dan keyin)
+      state.usedFormulaSigs.clear();
+      state.usedChartKeys.clear();
+      state.paragraphPool.length = 0;
+      state.violations.length = 0;
+      chapters.forEach((ch, idx) => {
+        const issues = scanChapter(ch, idx);
+        if (issues.length > 0) state.violations.push({ chIdx: idx, title: ch.title, issues });
+      });
+
+      if (state.violations.length > 0) {
+        console.warn("[mustaqil] qayta gen'dan keyin ham", state.violations.length, "ta bobda muammo qoldi (davom etilmoqda)");
+      } else {
+        console.log("[mustaqil] qayta gen muvaffaqiyatli — takrorlar yo'q ✅");
+      }
+    }
+
+    // Forbidden intro/conclusion'ni har holda filtrlash (regen bo'lmasa ham)
+    chapters.forEach(ch => {
+      const role = ch.role || (ch.id==="intro"?"introduction":ch.id==="conclusion"?"conclusion":"theory");
+      if (role !== "introduction" && role !== "conclusion" && Array.isArray(ch.content)) {
+        ch.content = ch.content.filter(item => {
+          if (item.type === "heading") {
+            const t = String(item.text||"").replace(/^\d+(\.\d+)?\.\s*/, "");
+            if (/^(kirish|xulosa|yakun|umumlashtirish)\b/i.test(t)) {
+              console.log(`[mustaqil] '${ch.title}'dan "${item.text}" sarlavhasi olib tashlandi`);
+              return false;
+            }
+          }
+          return true;
+        });
+      }
+    });
+  } else {
+    console.log("[mustaqil] validatsiya: takror yo'q ✅");
+  }
 
   // ── PASS 3: KENGAYTIRISH ───────────────────────────────────
   const actualWords = chapters.reduce((s,ch)=>s+countWords(ch.content),0);
@@ -260,6 +468,7 @@ FAQAT JSON: {"content":[{"type":"paragraph","text":"..."},{"type":"paragraph","t
 
   // ── RENDER + BUILD ─────────────────────────────────────────
   console.log("[mustaqil] render + docx...");
+  renumberMedia(chapters);  // formula/chart/table raqamlari butun hujjat bo'ylab unikal bo'ladi
   const pngCache = await prerenderMedia(chapters);
   const spec = { meta:outline.meta, chapters, references:outline.references||[] };
   const buf  = await buildDocument(spec, pngCache);
@@ -267,6 +476,14 @@ FAQAT JSON: {"content":[{"type":"paragraph","text":"..."},{"type":"paragraph","t
   if(!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true});
   fs.writeFileSync(outFile, buf);
   console.log("[mustaqil] tayyor:", outFile, Math.round(buf.length/1024)+"KB");
+
+  // CLEANUP: state ma'lumotlari faqat shu generatsiya uchun ishlatildi
+  // DB'ga saqlanmaydi, har generatsiya mustaqil
+  state.usedFormulaSigs.clear();
+  state.usedChartKeys.clear();
+  state.paragraphPool.length = 0;
+  state.violations.length = 0;
+
   return { outFile, pageCount:pages, title:outline.meta?.title||topic };
 }
 
