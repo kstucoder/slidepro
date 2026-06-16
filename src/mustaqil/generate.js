@@ -61,18 +61,37 @@ function countWords(content) {
     .reduce((s,b)=>s+(String(b.text||"").split(/\s+/).filter(Boolean).length),0);
 }
 
-// Outline'dan ban-list qurish (parallel generatsiya uchun)
-// i-chi bob uchun: boshqa barcha boblarning formula/chart ro'yxati
+// Outline'dan KONSEPT darajasida ban-list qurish
+// formula_plans: [{latex, concept}] — notation emas, MA'NO darajasida ban
+// chart_plans:   [{title, variable}] — sarlavha emas, MA'LUMOT darajasida ban
 function buildBanLists(outline, chapterIdx) {
-  const usedFormulas = outline.chapters
-    .filter((_,j) => j !== chapterIdx)
-    .flatMap(c => Array.isArray(c.formula_latex) ? c.formula_latex : []);
-  const usedCharts = outline.chapters
-    .filter((_,j) => j !== chapterIdx)
-    .flatMap(c => Array.isArray(c.chart_titles) ? c.chart_titles : []);
+  const formulas = [], charts = [];
+  outline.chapters.forEach((c, j) => {
+    if (j === chapterIdx) return;
+    // Formula ban: "latex — concept" formatida → LLM notationni o'zgartirib aldolmaydi
+    if (Array.isArray(c.formula_plans)) {
+      c.formula_plans.forEach(f => {
+        const latex   = typeof f === "string" ? f : (f.latex || "");
+        const concept = typeof f === "object" && f.concept ? ` (${f.concept})` : "";
+        if (latex) formulas.push(latex + concept);
+      });
+    } else if (Array.isArray(c.formula_latex)) {
+      c.formula_latex.forEach(f => f && formulas.push(f));
+    }
+    // Chart ban: "title — variable" formatida → sarlavha o'zgartirib aldolmaydi
+    if (Array.isArray(c.chart_plans)) {
+      c.chart_plans.forEach(g => {
+        const title    = typeof g === "string" ? g : (g.title || "");
+        const variable = typeof g === "object" && g.variable ? ` [ma'lumot: ${g.variable}]` : "";
+        if (title) charts.push(title + variable);
+      });
+    } else if (Array.isArray(c.chart_titles)) {
+      c.chart_titles.forEach(t => t && charts.push(t));
+    }
+  });
   return {
-    usedFormulas: [...new Set(usedFormulas)],
-    usedCharts:   [...new Set(usedCharts)],
+    usedFormulas: [...new Set(formulas)],
+    usedCharts:   [...new Set(charts)],
   };
 }
 
@@ -138,11 +157,17 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
 
   // Formula va grafik rejalashtirishini loglash
   const fLog = outline.chapters
-    .filter(c=>(c.formula_latex||[]).length>0)
-    .map(c=>`'${c.title}': [${c.formula_latex.join(", ")}]`);
+    .filter(c=>(c.formula_plans||c.formula_latex||[]).length>0)
+    .map(c=>{
+      const plans = c.formula_plans || (c.formula_latex||[]).map(l=>({latex:l}));
+      return `'${c.title}': [${plans.map(f=>(f.concept||f.latex||f)).join(", ")}]`;
+    });
   const gLog = outline.chapters
-    .filter(c=>(c.chart_titles||[]).length>0)
-    .map(c=>`'${c.title}' (${c.chart_type}): [${c.chart_titles.join(", ")}]`);
+    .filter(c=>(c.chart_plans||c.chart_titles||[]).length>0)
+    .map(c=>{
+      const plans = c.chart_plans || (c.chart_titles||[]).map(t=>({title:t}));
+      return `'${c.title}' (${c.chart_type}): [${plans.map(g=>(g.variable||g.title||g)).join(", ")}]`;
+    });
   if(fLog.length) console.log("[mustaqil] formulalar:", fLog.join(" | "));
   if(gLog.length) console.log("[mustaqil] grafiklar:", gLog.join(" | "));
   console.log("[mustaqil] outline:", outline.chapters.length+" bob, target="+outline.total_words_target+" so'z");
@@ -182,22 +207,19 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
     const { usedFormulas:realFormulas, usedCharts:realCharts } = collectUsedFormulasAndCharts(chapters);
 
     const toExpand = chapters
-      .map((ch,i)=>({ i, ch, target:Number(outline.chapters[i]?.word_target)||Math.round(totalWt/chapters.length), actual:countWords(ch.content) }))
-      .filter(x=>x.deficit=x.target-x.actual, x.deficit>100)
-      .sort((a,b)=>b.deficit-a.deficit)
-      .slice(0,4);
+      .map((ch, i) => {
+        const target = Number(outline.chapters[i]?.word_target) || Math.round(totalWt / chapters.length);
+        const actual = countWords(ch.content);
+        return { i, ch, target, actual, deficit: target - actual };
+      })
+      .filter(x => x.deficit > 100)
+      .sort((a, b) => b.deficit - a.deficit)
+      .slice(0, 4);
 
-    // Filter işareti düzeltmesi
-    const toExpandFixed = chapters
-      .map((ch,i)=>{ const target=Number(outline.chapters[i]?.word_target)||Math.round(totalWt/chapters.length); const actual=countWords(ch.content); return {i,ch,target,actual,deficit:target-actual}; })
-      .filter(x=>x.deficit>100)
-      .sort((a,b)=>b.deficit-a.deficit)
-      .slice(0,4);
-
-    if (toExpandFixed.length > 0) {
-      console.log("[mustaqil] kengaytirish:", toExpandFixed.map(x=>`'${x.ch.title}' +${x.deficit}so'z`).join(", "));
+    if (toExpand.length > 0) {
+      console.log("[mustaqil] kengaytirish:", toExpand.map(x=>`'${x.ch.title}' +${x.deficit}so'z`).join(", "));
       const expRes = await Promise.allSettled(
-        toExpandFixed.map(({i,ch,deficit}) => {
+        toExpand.map(({i,ch,deficit}) => {
           // Haqiqiy ban-list + bu bobdan boshqa boblarning ban-list'i
           const otherBan = buildBanLists(outline,i);
           const allBanFormulas = [...new Set([...realFormulas,...otherBan.usedFormulas])];
