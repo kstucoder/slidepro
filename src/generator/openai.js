@@ -13,7 +13,7 @@ async function generate({ system, user, apiKey, model, maxTokens }) {
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: model || "gpt-4o",
+      model: model || "gpt-5-nano",
       max_tokens: maxTokens || 8000,
       temperature: 0.7,
       response_format: { type: "json_object" },
