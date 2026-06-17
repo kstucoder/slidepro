@@ -104,11 +104,19 @@ function pieSVG({ labels=[], values=[], title="" }) {
 
 // Universal chart renderer
 async function renderChart({ chartType, labels, values, title, unit, caption }) {
+  // Himoya: LLM ba'zan values/labels ni undefined yoki noto'g'ri tipda qaytaradi
+  const safeValues = Array.isArray(values) ? values.map(v => Number(v) || 0) : [];
+  const safeLabels = Array.isArray(labels) ? labels.map(l => String(l == null ? "" : l)) : [];
+  // Bo'sh ma'lumot bilan render qilishning ma'nosi yo'q — xato qaytaramiz
+  if (safeValues.length === 0) {
+    throw new Error("chart: values bo'sh — render qilib bo'lmaydi");
+  }
+
   const type = (chartType || "bar").toLowerCase();
   let svg, w, h;
-  if (type === "line") { svg = lineSVG({ labels, values, title: title || caption || "", unit }); w = 600; h = 320; }
-  else if (type === "pie") { svg = pieSVG({ labels, values, title: title || caption || "" }); w = 580; h = 300; }
-  else { svg = barSVG({ labels, values, title: title || caption || "", unit }); w = 600; h = 360; }
+  if (type === "line") { svg = lineSVG({ labels: safeLabels, values: safeValues, title: title || caption || "", unit }); w = 600; h = 320; }
+  else if (type === "pie") { svg = pieSVG({ labels: safeLabels, values: safeValues, title: title || caption || "" }); w = 580; h = 300; }
+  else { svg = barSVG({ labels: safeLabels, values: safeValues, title: title || caption || "", unit }); w = 600; h = 360; }
 
   const buf = await sharp(Buffer.from(svg))
     .flatten({ background: { r: 255, g: 255, b: 255 } })

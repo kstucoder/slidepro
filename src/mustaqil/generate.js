@@ -119,15 +119,17 @@ async function prerenderMedia(chapters) {
   const tasks = [];
   chapters.forEach((ch, chIdx) => {
     (ch.content || []).forEach(item => {
-      // KESH KALITI: bob indeksi + raqam + element turidagi indeks
-      // → har bir blok unikal kalit oladi, hech qachon almashinmaydi
+      // KESH KALITI: faqat raqam (renumberMedia butun hujjat bo'ylab
+      // unikal raqam bergan — chIdx ga hojat yo'q).
+      // MUHIM: builder.js ham "f_<number>" / "c_<number>" qidiradi —
+      // kalitlar MOS bo'lishi shart, aks holda rasm hujjatga chiqmaydi.
       if (item.type === "formula") {
-        const key = `f_${chIdx}_${item.number}`;
+        const key = `f_${item.number}`;
         item._mediaKey = key;
         tasks.push({ key, fn: () => renderFormula(item.latex || item.display_text || "") });
       }
       if (item.type === "chart") {
-        const key = `c_${chIdx}_${item.number}`;
+        const key = `c_${item.number}`;
         item._mediaKey = key;
         tasks.push({ key, fn: () => renderChart(item) });
       }

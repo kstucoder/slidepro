@@ -402,7 +402,22 @@ function buildChapterContent(chapter, pngCache, isFirst) {
       }
       case "chart": {
         const media = pngCache && pngCache.get("c_" + item.number);
-        if (media) nodes.push(...imageBlock(media, item.caption || `${item.number||""}-rasm. ${item.title||""}`));
+        if (media) {
+          nodes.push(...imageBlock(media, item.caption || `${item.number||""}-rasm. ${item.title||""}`));
+        } else {
+          // Render qilinmagan bo'lsa — ma'lumotni matn ko'rinishida ko'rsatamiz,
+          // hech bo'lmaganda grafik ma'lumoti hujjatda yo'qolmaydi
+          console.warn(`[mustaqil] chart #${item.number} render qilinmagan — matn ko'rinishida chiqariladi`);
+          const labels = Array.isArray(item.labels) ? item.labels : [];
+          const values = Array.isArray(item.values) ? item.values : [];
+          const dataStr = labels.map((l, i) => `${l}: ${values[i] != null ? values[i] : "?"}`).join("; ");
+          nodes.push(captionPara(item.caption || `${item.number||""}-rasm. ${item.title||""}`));
+          nodes.push(new Paragraph({
+            children: [new TextRun({ text: `[Grafik: ${item.title || ""} — ${dataStr}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
+            spacing: { ...LINE_SPACING, before: mm(2), after: mm(2) },
+            alignment: AlignmentType.CENTER, indent: undefined,
+          }));
+        }
         break;
       }
       case "table":
