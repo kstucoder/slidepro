@@ -14,7 +14,8 @@ async function generate({ system, user, apiKey, model, maxTokens }) {
     },
     body: JSON.stringify({
       model: model || "gpt-5-nano",
-      max_tokens: maxTokens || 8000,
+      // Use `max_completion_tokens` for newer OpenAI models that reject `max_tokens`.
+      max_completion_tokens: maxTokens || 8000,
       temperature: 0.7,
       response_format: { type: "json_object" },
       messages: [
