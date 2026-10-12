@@ -45,7 +45,7 @@ async function callLLM({ system, user, llm, maxTokens = 6000 }) {
         const r = await fetch("https://api.openai.com/v1/chat/completions",{
           method:"POST",
           headers:{"content-type":"application/json","authorization":"Bearer "+openaiKey},
-          body: JSON.stringify({ model:openaiModel||"gpt-5-nano", max_tokens:maxTokens,
+          body: JSON.stringify({ model:openaiModel||"gpt-5-nano", max_completion_tokens:maxTokens,
             temperature:0.7, response_format:{type:"json_object"},
             messages:[{role:"system",content:system},{role:"user",content:user}] }),
         });
@@ -149,7 +149,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   const lang    = language || "o'zbek";
   const totalWt = wordsForPages(pages);
 
-  // ── PASS 1: OUTLINE ────────────────────────────────────────
+  // ── PASS 1: OUTLINE ───────────────────────────────────────
   console.log("[mustaqil] 1-pass: outline...");
   let outline = parseOutline(await callLLM({
     system: outlineSystemPrompt(),
@@ -191,13 +191,13 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
     .filter(c=>(c.formula_plans||c.formula_latex||[]).length>0)
     .map(c=>{
       const plans = c.formula_plans || (c.formula_latex||[]).map(l=>({latex:l}));
-      return `'${c.title}': [${plans.map(f=>(f.concept||f.latex||f)).join(", ")}]`;
+      return `'${c.title}': [${plans.map(f=>(f.concept||f.latex||f)).join(", ")} ]`;
     });
   const gLog = outline.chapters
     .filter(c=>(c.chart_plans||c.chart_titles||[]).length>0)
     .map(c=>{
       const plans = c.chart_plans || (c.chart_titles||[]).map(t=>({title:t}));
-      return `'${c.title}' (${c.chart_type}): [${plans.map(g=>(g.variable||g.title||g)).join(", ")}]`;
+      return `'${c.title}' (${c.chart_type}): [${plans.map(g=>(g.variable||g.title||g)).join(", ")} ]`;
     });
   if(fLog.length) console.log("[mustaqil] formulalar:", fLog.join(" | "));
   if(gLog.length) console.log("[mustaqil] grafiklar:", gLog.join(" | "));
@@ -339,7 +339,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
               chapter: ch, outline, language: lang, sourceContent,
               chapterIndex: chIdx, totalChapters: outline.chapters.length,
               usedFormulas: finalFBan, usedCharts: finalCBan,
-            }) + `\n\n⚠️ AVVALGI URINISH MUAMMOLI EDI — quyidagi formula/grafiklar BOSHQA boblarda ishlatilgan, AYNAN SHULARNI ISHLATMA:\n${finalFBan.length?"Formulalar: "+finalFBan.join(", ")+"\n":""}${finalCBan.length?"Grafiklar: "+finalCBan.join(", "):""}\n\nButunlay BOSHQA matematik konsept va boshqa ma'lumotli grafik ishlat.`,
+            }) + `\n\n⚠️ AVVALGI URINISH MUAMMOLI EDI — quyidagi formula/grafiklar BOSHQA boblarda ishlatilgan, AYNAN SHULARNI ISHLATMA:\n${finalFBan.length?"Formulalar: "+finalFBan.join(","):""}`,
             llm, maxTokens: 6000,
           }).then(t => {
             const p = parseChapter(t);
@@ -449,7 +449,8 @@ Kamida ${Math.max(3,Math.ceil(deficit/110))} ta paragraf (100-140 so'z/paragraf)
 Mavjud kontentni TAKRORLAMASDAN, YANGI jihatlar, misollar, tahlillar qo'sh.
 ${finalFBan.length ? "🚫 Bu formulalar ishlatilmagan: "+finalFBan.join(", ") : ""}
 ${finalCBan.length ? "🚫 Bu grafik sarlavhalari ishlatilmagan: "+finalCBan.join(", ") : ""}
-FAQAT JSON: {"content":[{"type":"paragraph","text":"..."},{"type":"paragraph","text":"..."},...]}`,
+FAQAT JSON: {\"content\":[{\"type\":\"paragraph\",\"text\":\"...\"},{\"type\":\"paragraph\",\"text\":\"...\"},...]}
+`,
             llm, maxTokens: 4000,
           }).then(t=>({ i, extra: parseChapter(t).content||[] }))
           .catch(e=>{ console.warn("[mustaqil] expand xato:", e.message); return {i,extra:[]}; });
