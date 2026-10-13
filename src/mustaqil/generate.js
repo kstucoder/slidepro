@@ -1,4 +1,4 @@
-// src/mustaqil/generate.js
+﻿// src/mustaqil/generate.js
 // 3-pass strategiyasi:
 //   Pass 1: outline (tuzilma + formula/grafik rejalashtirish)
 //   Pass 2: parallel chapter generation (outline ban-list bilan)
@@ -21,7 +21,7 @@ const { renderFormula } = require("./formula");
 const { renderChart }   = require("./chart");
 const { buildDocument } = require("./builder");
 
-// ── LLM chaqiruv (anthropic → openai failover) ─────────────
+// в”Ђв”Ђ LLM chaqiruv (anthropic в†’ openai failover) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 async function callLLM({ system, user, llm, maxTokens = 6000 }) {
   const { provider, anthropicKey, anthropicModel, openaiKey, openaiModel } = llm;
   const order = provider === "openai" ? ["openai"]
@@ -66,13 +66,13 @@ function countWords(content) {
 }
 
 // Outline'dan KONSEPT darajasida ban-list qurish
-// formula_plans: [{latex, concept}] — notation emas, MA'NO darajasida ban
-// chart_plans:   [{title, variable}] — sarlavha emas, MA'LUMOT darajasida ban
+// formula_plans: [{latex, concept}] вЂ” notation emas, MA'NO darajasida ban
+// chart_plans:   [{title, variable}] вЂ” sarlavha emas, MA'LUMOT darajasida ban
 function buildBanLists(outline, chapterIdx) {
   const formulas = [], charts = [];
   outline.chapters.forEach((c, j) => {
     if (j === chapterIdx) return;
-    // Formula ban: "latex — concept" formatida → LLM notationni o'zgartirib aldolmaydi
+    // Formula ban: "latex вЂ” concept" formatida в†’ LLM notationni o'zgartirib aldolmaydi
     if (Array.isArray(c.formula_plans)) {
       c.formula_plans.forEach(f => {
         const latex   = typeof f === "string" ? f : (f.latex || "");
@@ -82,7 +82,7 @@ function buildBanLists(outline, chapterIdx) {
     } else if (Array.isArray(c.formula_latex)) {
       c.formula_latex.forEach(f => f && formulas.push(f));
     }
-    // Chart ban: "title — variable" formatida → sarlavha o'zgartirib aldolmaydi
+    // Chart ban: "title вЂ” variable" formatida в†’ sarlavha o'zgartirib aldolmaydi
     if (Array.isArray(c.chart_plans)) {
       c.chart_plans.forEach(g => {
         const title    = typeof g === "string" ? g : (g.title || "");
@@ -100,7 +100,7 @@ function buildBanLists(outline, chapterIdx) {
 }
 
 // Formulalar va grafiklarni QAYTA RAQAMLASH:
-// LLM har bob uchun mustaqil ravishda number:1, number:2 qaytaradi —
+// LLM har bob uchun mustaqil ravishda number:1, number:2 qaytaradi вЂ”
 // natijada bir xil kesh kaliti ("c_1") bir nechta turli rasmga ishora qiladi.
 // Bu funksiya butun hujjat bo'ylab unikal raqamlar beradi: 1, 2, 3, ...
 function renumberMedia(chapters) {
@@ -120,8 +120,8 @@ async function prerenderMedia(chapters) {
   chapters.forEach((ch, chIdx) => {
     (ch.content || []).forEach(item => {
       // KESH KALITI: faqat raqam (renumberMedia butun hujjat bo'ylab
-      // unikal raqam bergan — chIdx ga hojat yo'q).
-      // MUHIM: builder.js ham "f_<number>" / "c_<number>" qidiradi —
+      // unikal raqam bergan вЂ” chIdx ga hojat yo'q).
+      // MUHIM: builder.js ham "f_<number>" / "c_<number>" qidiradi вЂ”
       // kalitlar MOS bo'lishi shart, aks holda rasm hujjatga chiqmaydi.
       if (item.type === "formula") {
         const key = `f_${item.number}`;
@@ -143,23 +143,23 @@ async function prerenderMedia(chapters) {
   return cache;
 }
 
-// ── ASOSIY GENERATSIYA ─────────────────────────────────────
+// в”Ђв”Ђ ASOSIY GENERATSIYA в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 async function generateMustaqilIsh({ topic, pages, language, studentName, studentGroup, org, supervisor, sourceContent, llm, outFile }) {
   console.log("[mustaqil] boshlandi:", topic, pages+"bet");
   const lang    = language || "o'zbek";
   const totalWt = wordsForPages(pages);
 
-  // ── PASS 1: OUTLINE ───────────────────────────────────────
+  // в”Ђв”Ђ PASS 1: OUTLINE в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
   console.log("[mustaqil] 1-pass: outline...");
   let outline = parseOutline(await callLLM({
     system: outlineSystemPrompt(),
     user:   outlineUserPrompt({ topic, pages, language:lang, studentName, studentGroup, org, supervisor, sourceContent }),
-    llm, maxTokens: 2500,
+    llm, maxTokens: 6000, // S2-T4: outline keng budget (JSON uzilishi oldini oladi)
   }));
   if (outline.meta) outline.meta.year = String(new Date().getFullYear());
   outline.total_words_target = outline.total_words_target || totalWt;
 
-  // Tuzilma tekshiruvi — soxta qo'shish yo'q, zarur bo'lsa qayta so'rash
+  // Tuzilma tekshiruvi вЂ” soxta qo'shish yo'q, zarur bo'lsa qayta so'rash
   const hasIntro = outline.chapters.some(c=>c.id==="intro");
   const hasConc  = outline.chapters.some(c=>c.id==="conclusion");
   if (!hasIntro || !hasConc) {
@@ -167,14 +167,14 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
     const retry = parseOutline(await callLLM({
       system: outlineSystemPrompt(),
       user:   outlineUserPrompt({ topic, pages, language:lang, studentName, studentGroup, org, supervisor, sourceContent }),
-      llm, maxTokens: 2500,
+      llm, maxTokens: 6000, // S2-T4: outline keng budget (JSON uzilishi oldini oladi)
     }));
     if (retry.chapters.some(c=>c.id==="intro") && retry.chapters.some(c=>c.id==="conclusion")) {
       if (retry.meta) retry.meta.year = String(new Date().getFullYear());
       outline = retry;
-      console.log("[mustaqil] outline qayta olindi ✅");
+      console.log("[mustaqil] outline qayta olindi вњ…");
     } else {
-      console.warn("[mustaqil] ikkinchi urinishda ham tuzilma noto'g'ri — mavjud bilan davom");
+      console.warn("[mustaqil] ikkinchi urinishda ham tuzilma noto'g'ri вЂ” mavjud bilan davom");
     }
   }
 
@@ -203,7 +203,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   if(gLog.length) console.log("[mustaqil] grafiklar:", gLog.join(" | "));
   console.log("[mustaqil] outline:", outline.chapters.length+" bob, target="+outline.total_words_target+" so'z");
 
-  // ── PASS 2: PARALLEL CHAPTER GENERATION ───────────────────
+  // в”Ђв”Ђ PASS 2: PARALLEL CHAPTER GENERATION в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
   console.log("[mustaqil] 2-pass: boblar parallel...");
   const results = await Promise.allSettled(
     outline.chapters.map((ch, i) => {
@@ -243,11 +243,11 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   );
   let chapters = results.map((r,i) => r.status==="fulfilled" ? r.value : {...outline.chapters[i],content:[]});
 
-  // ── VALIDATSIYA: takror formula/grafik, asosiy bobda kirish/xulosa ──
+  // в”Ђв”Ђ VALIDATSIYA: takror formula/grafik, asosiy bobda kirish/xulosa в”Ђв”Ђ
   // State tracking (faqat shu generatsiya uchun):
   const state = {
-    usedFormulaSigs:  new Map(),  // signature → {chIdx, latex}
-    usedChartKeys:    new Map(),  // purpose key → {chIdx, title}
+    usedFormulaSigs:  new Map(),  // signature в†’ {chIdx, latex}
+    usedChartKeys:    new Map(),  // purpose key в†’ {chIdx, title}
     paragraphPool:    [],          // {chIdx, text}
     violations:       [],
   };
@@ -339,7 +339,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
               chapter: ch, outline, language: lang, sourceContent,
               chapterIndex: chIdx, totalChapters: outline.chapters.length,
               usedFormulas: finalFBan, usedCharts: finalCBan,
-            }) + `\n\n⚠️ AVVALGI URINISH MUAMMOLI EDI — quyidagi formula/grafiklar BOSHQA boblarda ishlatilgan, AYNAN SHULARNI ISHLATMA:\n${finalFBan.length?"Formulalar: "+finalFBan.join(","):""}`,
+            }) + `\n\nвљ пёЏ AVVALGI URINISH MUAMMOLI EDI вЂ” quyidagi formula/grafiklar BOSHQA boblarda ishlatilgan, AYNAN SHULARNI ISHLATMA:\n${finalFBan.length?"Formulalar: "+finalFBan.join(","):""}`,
             llm, maxTokens: 6000,
           }).then(t => {
             const p = parseChapter(t);
@@ -383,7 +383,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
       if (state.violations.length > 0) {
         console.warn("[mustaqil] qayta gen'dan keyin ham", state.violations.length, "ta bobda muammo qoldi (davom etilmoqda)");
       } else {
-        console.log("[mustaqil] qayta gen muvaffaqiyatli — takrorlar yo'q ✅");
+        console.log("[mustaqil] qayta gen muvaffaqiyatli вЂ” takrorlar yo'q вњ…");
       }
     }
 
@@ -404,10 +404,10 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
       }
     });
   } else {
-    console.log("[mustaqil] validatsiya: takror yo'q ✅");
+    console.log("[mustaqil] validatsiya: takror yo'q вњ…");
   }
 
-  // ── PASS 3: KENGAYTIRISH ───────────────────────────────────
+  // в”Ђв”Ђ PASS 3: KENGAYTIRISH в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
   const actualWords = chapters.reduce((s,ch)=>s+countWords(ch.content),0);
   const fillPct = totalWt>0 ? actualWords/totalWt : 1;
   console.log("[mustaqil] so'z:", actualWords+"/"+totalWt+" ("+Math.round(fillPct*100)+"%)");
@@ -442,13 +442,13 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
 
           return callLLM({
             system: `Sen akademik mustaqil ish yozuvchisi mutaxassissan. FAQAT JSON qaytarasan.`,
-            user: `"${outline.meta?.title||topic}" — "${ch.title}" bo'limi uchun qo'shimcha kontent.
+            user: `"${outline.meta?.title||topic}" вЂ” "${ch.title}" bo'limi uchun qo'shimcha kontent.
 Hozir ${countWords(ch.content)} so'z, kamida ${deficit} so'z qo'shimcha kerak.
 Til: ${lang}. Akademik, rasmiy uslub.
 Kamida ${Math.max(3,Math.ceil(deficit/110))} ta paragraf (100-140 so'z/paragraf).
 Mavjud kontentni TAKRORLAMASDAN, YANGI jihatlar, misollar, tahlillar qo'sh.
-${finalFBan.length ? "🚫 Bu formulalar ishlatilmagan: "+finalFBan.join(", ") : ""}
-${finalCBan.length ? "🚫 Bu grafik sarlavhalari ishlatilmagan: "+finalCBan.join(", ") : ""}
+${finalFBan.length ? "рџљ« Bu formulalar ishlatilmagan: "+finalFBan.join(", ") : ""}
+${finalCBan.length ? "рџљ« Bu grafik sarlavhalari ishlatilmagan: "+finalCBan.join(", ") : ""}
 FAQAT JSON: {\"content\":[{\"type\":\"paragraph\",\"text\":\"...\"},{\"type\":\"paragraph\",\"text\":\"...\"},...]}
 `,
             llm, maxTokens: 4000,
@@ -469,7 +469,7 @@ FAQAT JSON: {\"content\":[{\"type\":\"paragraph\",\"text\":\"...\"},{\"type\":\"
     }
   }
 
-  // ── RENDER + BUILD ─────────────────────────────────────────
+  // в”Ђв”Ђ RENDER + BUILD в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
   console.log("[mustaqil] render + docx...");
   renumberMedia(chapters);  // formula/chart/table raqamlari butun hujjat bo'ylab unikal bo'ladi
   const pngCache = await prerenderMedia(chapters);
