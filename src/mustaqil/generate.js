@@ -213,7 +213,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
         system: chapterSystemPrompt(),
         user:   chapterUserPrompt({
           chapter:ch, outline, language:lang, sourceContent,
-          chapterIndex:i, totalChapters:outline.chapters.length,
+          chapterIndex:i, totalChapters:outline.chapters.length, mainNum: outline.chapters.slice(0, i).filter(c => c.id !== "intro" && c.id !== "conclusion").length + (ch.id !== "intro" && ch.id !== "conclusion" ? 1 : 0),
           usedFormulas, usedCharts,
         }),
         llm, maxTokens: 6000,

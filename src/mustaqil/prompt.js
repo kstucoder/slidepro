@@ -199,7 +199,7 @@ function chapterSystemPrompt() {
   return `Sen akademik mustaqil ish yozuvchisi mutaxassissan. FAQAT to'g'ri JSON qaytarasan вЂ” hech qanday izoh, markdown, backtick yo'q. Akademik, rasmiy, chuqur tahliliy uslubda yoz.`;
 }
 
-function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterIndex, totalChapters, usedFormulas = [], usedCharts = [] }) {
+function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterIndex, totalChapters, mainNum, usedFormulas = [], usedCharts = [] }) {
   const lang = language || "o'zbek";
   const wt = chapter.word_target || 400;
   const paraCount = Math.max(4, Math.ceil(wt / 110));
@@ -260,6 +260,7 @@ Yozish kerak:
 - "Kirish", "Xulosa", "Yakun", "Umumlashtirish" kabi kichik bo'limlar BO'LMASIN
 - "Kirishda aytilganidek", "xulosa qilib aytganda", "yakunda" iboralar BO'LMASIN
 - 1.1., 1.2., 1.3. nomli bo'limlar bevosita MAVZUNI yoritsin вЂ”
+- Kichik bo'lim raqamlari ANIQ shu formatda: <bob_raqami>.<tartib>. (masalan bob 2 bo'lsa: "2.1.", "2.2.") — Kirish va Xulosa ichida raqamli bo'lim BO'LMAYDI
   ularda "kirish" yoki "xulosa" so'zi sarlavhada ham, matnda ham ISHLATILMAYDI
 - Bu bob alohida hujjat emas вЂ” Kirish va Xulosa alohida boblarda berilgan, takrorlash kerak emas`;
   }
@@ -275,6 +276,7 @@ Yozish kerak:
 
 Ish: "${outline.meta?.title || "Mavzu"}" (${lang} tilida)
 Bob: "${chapter.title}" (${chapterIndex+1}/${totalChapters})
+Bob raqami (hujjatda va kichik bo'lim raqamlarida SHU ishlatiladi): ${mainNum || (chapterIndex+1)}
 So'z maqsadi: KAMIDA ${wt} so'z
 Paragraflar: KAMIDA ${paraCount} ta, har biri 100-140 so'z
 
@@ -299,7 +301,7 @@ CONTENT BLOKLARI:
    - Misol: "2023-yil NASA ma'lumotiga ko'ra, COв‚‚ 421 ppm ga yetdi вЂ” bu 800 ming yil ichidagi eng yuqori..."
    - Har paragraf YANGI g'oya вЂ” avvalgini boshqacha aytib yurish TA'QIQLANGAN
 
-2. Sarlavha: {"type":"heading","level":2,"text":"1.1. ..."}
+  Sarlavha: {"type":"heading","level":2,"text":"<bob_raqami>.<tartib>. ..."} — bob_raqami quyida beriladi
 
 3. Formula (formula_count > 0, faqat aniq fan mavzusi):
    {"type":"formula","latex":"<yuqorida rejalashtirilgan latex>","display_text":"<inson o'qiydigan>","caption":"<nomi va mazmuni>","number":1}

@@ -1,5 +1,5 @@
-// src/mustaqil/builder.js
-// Mustaqil ish JSON spec → GOST formatli .docx
+﻿// src/mustaqil/builder.js
+// Mustaqil ish JSON spec в†’ GOST formatli .docx
 // Format: rasmlar asosida qayta ishlangan (2-sahifa: REJA, bob yo'q,
 // har bo'lim yangi sahifadan, barcha matn qora)
 
@@ -20,7 +20,7 @@ const LINE_SPACING = { line: 360, lineRule: "auto" };  // 1.5
 const INDENT = mm(12.5);     // 1.25 sm
 const BLACK = "000000";
 
-// ─── inline LaTeX tozalash (sarlavha/izoh uchun — matn qaytaradi) ──
+// в”Ђв”Ђв”Ђ inline LaTeX tozalash (sarlavha/izoh uchun вЂ” matn qaytaradi) в”Ђв”Ђ
 function cleanInlineLatex(text) {
   if (!text) return "";
   let t = String(text);
@@ -29,26 +29,26 @@ function cleanInlineLatex(text) {
   t = t.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\$([^$]+?)\$/g, (_, m) => latexToUnicode(m));
   if (/\\[a-zA-Z]+|[_^]\{/.test(t)) t = latexToUnicode(t);
-  // Qolgan X_n → X₁, X_word → Xword (sarlavha uchun yetarli)
-  const subMap = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉'};
+  // Qolgan X_n в†’ Xв‚Ѓ, X_word в†’ Xword (sarlavha uchun yetarli)
+  const subMap = {'0':'в‚Ђ','1':'в‚Ѓ','2':'в‚‚','3':'в‚ѓ','4':'в‚„','5':'в‚…','6':'в‚†','7':'в‚‡','8':'в‚€','9':'в‚‰'};
   t = t.replace(/([A-Za-z])_([0-9])/g, (_, b, d) => b + (subMap[d] || d));
   t = t.replace(/([A-Za-z])_([a-zA-Z][a-zA-Z0-9]*)/g, '$1$2');
   return t;
 }
 
-// ─── paragraf uchun: TextRun[] qaytaradi, X_sub → haqiqiy Word subscript ──
+// в”Ђв”Ђв”Ђ paragraf uchun: TextRun[] qaytaradi, X_sub в†’ haqiqiy Word subscript в”Ђв”Ђ
 function parseTextRuns(rawText) {
   if (!rawText) return [new TextRun({ text: "", font: FONT, size: FONT_SIZE, color: BLACK })];
   let t = String(rawText);
 
-  // 1) LaTeX delimiter'lar → latexToUnicode
+  // 1) LaTeX delimiter'lar в†’ latexToUnicode
   t = t.replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => latexToUnicode(m));
   t = t.replace(/\$([^$]+?)\$/g, (_, m) => latexToUnicode(m));
   if (/\\[a-zA-Z]+/.test(t)) t = latexToUnicode(t);
 
-  // 2) X_sub, X_{sub}, X^sup, X^{sup} → Word TextRun with subScript/superScript
+  // 2) X_sub, X_{sub}, X^sup, X^{sup} в†’ Word TextRun with subScript/superScript
   const runs = [];
   // Pattern: base harf + subscript yoki superscript
   const re = /([A-Za-z])(?:_\{([^}]{1,20})\}|_([a-zA-Z][a-zA-Z0-9]{0,15}|[0-9]{1,3})|\^\{([^}]{1,20})\}|\^([a-zA-Z0-9]{1,10}))/g;
@@ -79,18 +79,18 @@ function parseTextRuns(rawText) {
 function latexToUnicode(s) {
   let t = String(s);
   t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1)/($2)");
-  t = t.replace(/\\sqrt\{([^{}]+)\}/g, "√($1)");
-  t = t.replace(/\\times/g,"×").replace(/\\cdot/g,"·").replace(/\\div/g,"÷");
-  t = t.replace(/\\pm/g,"±").replace(/\\leq/g,"≤").replace(/\\geq/g,"≥")
-       .replace(/\\neq/g,"≠").replace(/\\approx/g,"≈").replace(/\\infty/g,"∞");
-  t = t.replace(/\\sum/g,"Σ").replace(/\\prod/g,"∏").replace(/\\int/g,"∫")
-       .replace(/\\partial/g,"∂").replace(/\\nabla/g,"∇");
-  const greek = { alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",theta:"θ",
-    lambda:"λ",mu:"μ",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",omega:"ω",
-    Delta:"Δ",Sigma:"Σ",Omega:"Ω",Pi:"Π",Gamma:"Γ",Theta:"Θ",Lambda:"Λ",Phi:"Φ" };
+  t = t.replace(/\\sqrt\{([^{}]+)\}/g, "в€љ($1)");
+  t = t.replace(/\\times/g,"Г—").replace(/\\cdot/g,"В·").replace(/\\div/g,"Г·");
+  t = t.replace(/\\pm/g,"В±").replace(/\\leq/g,"в‰¤").replace(/\\geq/g,"в‰Ґ")
+       .replace(/\\neq/g,"в‰ ").replace(/\\approx/g,"в‰€").replace(/\\infty/g,"в€ћ");
+  t = t.replace(/\\sum/g,"ОЈ").replace(/\\prod/g,"в€Џ").replace(/\\int/g,"в€«")
+       .replace(/\\partial/g,"в€‚").replace(/\\nabla/g,"в€‡");
+  const greek = { alpha:"О±",beta:"ОІ",gamma:"Оі",delta:"Оґ",epsilon:"Оµ",theta:"Оё",
+    lambda:"О»",mu:"Ој",pi:"ПЂ",rho:"ПЃ",sigma:"Пѓ",tau:"П„",phi:"П†",omega:"П‰",
+    Delta:"О”",Sigma:"ОЈ",Omega:"О©",Pi:"О ",Gamma:"О“",Theta:"О",Lambda:"О›",Phi:"О¦" };
   Object.keys(greek).forEach((k) => { t = t.replace(new RegExp("\\\\"+k+"\\b","g"), greek[k]); });
-  const sub = {"0":"₀","1":"₁","2":"₂","3":"₃","4":"₄","5":"₅","6":"₆","7":"₇","8":"₈","9":"₉","+":"₊","-":"₋","n":"ₙ","i":"ᵢ","a":"ₐ","x":"ₓ"};
-  const sup = {"0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹","+":"⁺","-":"⁻","n":"ⁿ","i":"ⁱ"};
+  const sub = {"0":"в‚Ђ","1":"в‚Ѓ","2":"в‚‚","3":"в‚ѓ","4":"в‚„","5":"в‚…","6":"в‚†","7":"в‚‡","8":"в‚€","9":"в‚‰","+":"в‚Љ","-":"в‚‹","n":"в‚™","i":"бµў","a":"в‚ђ","x":"в‚“"};
+  const sup = {"0":"вЃ°","1":"В№","2":"ВІ","3":"Ві","4":"вЃґ","5":"вЃµ","6":"вЃ¶","7":"вЃ·","8":"вЃё","9":"вЃ№","+":"вЃє","-":"вЃ»","n":"вЃї","i":"вЃ±"};
   t = t.replace(/_\{([^{}]+)\}/g,(_,m)=>m.split("").map(c=>sub[c]||c).join(""));
   t = t.replace(/_([a-zA-Z0-9])/g,(_,c)=>sub[c]||("_"+c));
   t = t.replace(/\^\{([^{}]+)\}/g,(_,m)=>m.split("").map(c=>sup[c]||c).join(""));
@@ -104,7 +104,7 @@ function stripBob(title) {
   return String(title || "").replace(/^\d+[\s-]*bob[\s.]*[-.\s]*/i, "").trim();
 }
 
-// ─── paragraph helpers ─────────────────────────────────────
+// в”Ђв”Ђв”Ђ paragraph helpers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function run(text, opts = {}) {
   return new TextRun({ text: cleanInlineLatex(String(text)), font: FONT,
     size: opts.size || FONT_SIZE, bold: opts.bold || false,
@@ -112,9 +112,9 @@ function run(text, opts = {}) {
 }
 
 function para(text, opts = {}) {
-  // parseTextRuns ishlatiladi: X_sub → Word subscript, X^sup → superscript
+  // parseTextRuns ishlatiladi: X_sub в†’ Word subscript, X^sup в†’ superscript
   const runs = parseTextRuns(String(text || ""));
-  // bold/italic opts qo'llash kerak bo'lsa — barcha runlarga qo'shamiz
+  // bold/italic opts qo'llash kerak bo'lsa вЂ” barcha runlarga qo'shamiz
   if (opts.bold || opts.italic) {
     runs.forEach(r => { if (opts.bold) r.bold = true; if (opts.italic) r.italics = true; });
   }
@@ -174,7 +174,7 @@ function captionPara(text) {
   });
 }
 
-// ─── rasm bloki ────────────────────────────────────────────
+// в”Ђв”Ђв”Ђ rasm bloki в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function imageBlock(media, caption) {
   const buf = media.buf || media;
   const w = media.width || 440;
@@ -190,11 +190,11 @@ function imageBlock(media, caption) {
   return nodes;
 }
 
-// ─── jadval bloki ──────────────────────────────────────────
+// в”Ђв”Ђв”Ђ jadval bloki в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function tableBlock(data, caption) {
   const headers = Array.isArray(data.headers) ? data.headers : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
-  // Jadval bo'sh bo'lsa — umuman chiqarmaymiz
+  // Jadval bo'sh bo'lsa вЂ” umuman chiqarmaymiz
   if (headers.length === 0 && rows.length === 0) return [];
   const nodes = [];
   if (caption) nodes.push(captionPara(caption));
@@ -234,14 +234,14 @@ function tableBlock(data, caption) {
   return nodes;
 }
 
-// ─── MUQOVA SAHIFASI ────────────────────────────────────────
+// в”Ђв”Ђв”Ђ MUQOVA SAHIFASI в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 // A4 kontent maydoni: 257mm balandlik
-// Bloklar: Vazirlik(top) → Org chiziqlar → [bo'shliq] →
-//          MUSTAQIL ISH(markazga) → Mavzu 18pt → Talaba(o'ng) → [bo'shliq] → Shahar chiziq(pastda)
+// Bloklar: Vazirlik(top) в†’ Org chiziqlar в†’ [bo'shliq] в†’
+//          MUSTAQIL ISH(markazga) в†’ Mavzu 18pt в†’ Talaba(o'ng) в†’ [bo'shliq] в†’ Shahar chiziq(pastda)
 function buildCoverPage(meta) {
   const year  = String(new Date().getFullYear());
-  const UL28  = "_____________________________";   // 29 belgi ≈ 65mm (org chiziqlari uchun)
-  const UL22  = "_____________________";            // 22 belgi ≈ 50mm (shahar uchun)
+  const UL28  = "_____________________________";   // 29 belgi в‰€ 65mm (org chiziqlari uchun)
+  const UL22  = "_____________________";            // 22 belgi в‰€ 50mm (shahar uchun)
   const SZ14  = FONT_SIZE;                          // 14pt
   const SZ18  = 36;                                 // 18pt = 36 half-point
 
@@ -272,38 +272,38 @@ function buildCoverPage(meta) {
   ]);
 
   return [
-    // ── 1. VAZIRLIK (yuqorida, 14pt qalin) ──────────────────
+    // в”Ђв”Ђ 1. VAZIRLIK (yuqorida, 14pt qalin) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     cp([r("O'ZBEKISTON RESPUBLIKASI OLIY TA'LIM, FAN VA", true)],
       { before: mm(8) }),
     cp([r("INNOVATSIYALAR VAZIRLIGI", true)], { after: mm(10) }),
 
-    // ── 2. TASHKILOT CHIZIQLARI ──────────────────────────────
+    // в”Ђв”Ђ 2. TASHKILOT CHIZIQLARI в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     ulLine("UNIVERSITETI"),
     ulLine("FAKULTETI"),
     ulLine("KAFEDRASI"),
 
-    // ── 3. MUSTAQIL ISH — sahifa markazida (before = katta) ──
-    // Yuqori blok ≈ 55mm → MUSTAQIL ISH ≈ 120mm dan boshlaydi (markazga yaqin)
+    // в”Ђв”Ђ 3. MUSTAQIL ISH вЂ” sahifa markazida (before = katta) в”Ђв”Ђ
+    // Yuqori blok в‰€ 55mm в†’ MUSTAQIL ISH в‰€ 120mm dan boshlaydi (markazga yaqin)
     cp([r("MUSTAQIL ISH", true, 36)], { before: mm(44), after: mm(14) }),
 
-    // ── 4. MAVZU — 18pt ──────────────────────────────────────
+    // в”Ђв”Ђ 4. MAVZU вЂ” 18pt в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     cp([r("Mavzu:", false, SZ18)], { before: mm(0) }),
     cp([r('"' + (meta.title || "") + '"', true, SZ18)],
       { before: mm(4), after: mm(18) }),
 
-    // ── 5. TALABA MA'LUMOTLARI (o'ng tomondan) ───────────────
+    // в”Ђв”Ђ 5. TALABA MA'LUMOTLARI (o'ng tomondan) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     rp([r("Bajardi:  "), r(meta.student_name || "____________________", true)]),
     rp([r("Guruh:    "), r(meta.student_group || "____________________", true)]),
     rp([r("Tekshirdi:"), r("  " + (meta.supervisor || "____________________"), true)]),
 
-    // ── 6. SHAHAR + YIL — sahifa pastida ─────────────────────
-    // before = katta qiymat → yil sahifa pastiga siqadi
-    // pageBreakPara yo'q — section2 NEXT_PAGE o'zi sahifa almashtiradi
-    cp([r(UL22 + " — " + year)], { before: mm(70) }),
+    // в”Ђв”Ђ 6. SHAHAR + YIL вЂ” sahifa pastida в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+    // before = katta qiymat в†’ yil sahifa pastiga siqadi
+    // pageBreakPara yo'q вЂ” section2 NEXT_PAGE o'zi sahifa almashtiradi
+    cp([r(UL22 + " вЂ” " + year)], { before: mm(70) }),
   ];
 }
 
-// ─── REJA SAHIFASI ──────────────────────────────────────────
+// в”Ђв”Ђв”Ђ REJA SAHIFASI в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 // 2-sahifa: "Mavzu: ..." + "REJA" + raqamlangan bo'limlar ro'yxati
 function buildReja(chapters, meta) {
   const nodes = [];
@@ -319,39 +319,26 @@ function buildReja(chapters, meta) {
   }));
 
   // Bo'limlar ro'yxatini shakllantirish
-  // Tartib: 1. Kirish → asosiy boblar → 3. Xulosa → 4. Adabiyotlar
+  // Tartib (aynan namuna): Kirish (raqamsiz) -> 1..N asosiy boblar -> Xulosa (raqamsiz) -> Foydalanilgan adabiyotlar (raqamsiz)
   const list = [];
   let mainNum = 1;
   chapters.forEach((ch) => {
     const title = stripBob(ch.title || "");
     if (ch.id === "intro") {
-      list.push({ num: String(mainNum++), text: title || "Kirish", level: 1 });
+      list.push({ num: "", text: title || "Kirish", level: 1 });
     } else if (ch.id === "conclusion") {
-      list.push({ num: String(mainNum++), text: title || "Xulosa", level: 1 });
+      list.push({ num: "", text: title || "Xulosa", level: 1 });
     } else {
-      // asosiy bo'lim
-      list.push({ num: String(mainNum), text: title, level: 1 });
-      // kichik bo'limlar
-      if (ch.sections && ch.sections.length) {
-        ch.sections.forEach((s, si) => {
-          list.push({ num: `${mainNum}.${si + 1}`, text: stripBob(s.title || ""), level: 2 });
-        });
-      } else if (ch.content) {
-        // contentdan headinglarni topamiz
-        ch.content.filter(c => c.type === "heading" && c.level === 2).forEach((h, hi) => {
-          list.push({ num: `${mainNum}.${hi + 1}`, text: stripBob(h.text || ""), level: 2 });
-        });
-      }
-      mainNum++;
+      // faqat asosiy boblar raqamlanadi — ichki 1.1/1.2 bandlar Rejada KO'RINMAYDI (matnda qoladi)
+      list.push({ num: String(mainNum++), text: title, level: 1 });
     }
   });
-  // Adabiyotlar
-  list.push({ num: String(mainNum), text: "Foydalanilgan adabiyotlar", level: 1 });
+  list.push({ num: "", text: "Foydalanilgan adabiyotlar", level: 1 });
 
   list.forEach((item) => {
     nodes.push(new Paragraph({
       children: [new TextRun({
-        text: `${item.num}. ${item.text}`,
+        text: item.num ? `${item.num}. ${item.text}` : item.text,
         font: FONT, size: FONT_SIZE, color: BLACK,
         bold: item.level === 1,
       })],
@@ -364,11 +351,11 @@ function buildReja(chapters, meta) {
   return nodes;
 }
 
-// ─── BOB KONTENTI ──────────────────────────────────────────
+// в”Ђв”Ђв”Ђ BOB KONTENTI в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function buildChapterContent(chapter, pngCache, isFirst) {
   const nodes = [];
   // Har bir bo'lim (kirish, xulosa, asosiy) yangi sahifadan boshlanadi
-  // isFirst = true bo'lsa — REJA'dan keyin birinchi bo'lim, pageBreak allaqachon bor
+  // isFirst = true bo'lsa вЂ” REJA'dan keyin birinchi bo'lim, pageBreak allaqachon bor
   if (!isFirst) nodes.push(pageBreakPara());
 
   // Sarlavha
@@ -405,15 +392,15 @@ function buildChapterContent(chapter, pngCache, isFirst) {
         if (media) {
           nodes.push(...imageBlock(media, item.caption || `${item.number||""}-rasm. ${item.title||""}`));
         } else {
-          // Render qilinmagan bo'lsa — ma'lumotni matn ko'rinishida ko'rsatamiz,
+          // Render qilinmagan bo'lsa вЂ” ma'lumotni matn ko'rinishida ko'rsatamiz,
           // hech bo'lmaganda grafik ma'lumoti hujjatda yo'qolmaydi
-          console.warn(`[mustaqil] chart #${item.number} render qilinmagan — matn ko'rinishida chiqariladi`);
+          console.warn(`[mustaqil] chart #${item.number} render qilinmagan вЂ” matn ko'rinishida chiqariladi`);
           const labels = Array.isArray(item.labels) ? item.labels : [];
           const values = Array.isArray(item.values) ? item.values : [];
           const dataStr = labels.map((l, i) => `${l}: ${values[i] != null ? values[i] : "?"}`).join("; ");
           nodes.push(captionPara(item.caption || `${item.number||""}-rasm. ${item.title||""}`));
           nodes.push(new Paragraph({
-            children: [new TextRun({ text: `[Grafik: ${item.title || ""} — ${dataStr}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
+            children: [new TextRun({ text: `[Grafik: ${item.title || ""} вЂ” ${dataStr}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
             spacing: { ...LINE_SPACING, before: mm(2), after: mm(2) },
             alignment: AlignmentType.CENTER, indent: undefined,
           }));
@@ -428,7 +415,7 @@ function buildChapterContent(chapter, pngCache, isFirst) {
   return nodes;
 }
 
-// ─── ADABIYOTLAR RO'YXATI ──────────────────────────────────
+// в”Ђв”Ђв”Ђ ADABIYOTLAR RO'YXATI в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function buildReferences(refs = []) {
   const nodes = [
     pageBreakPara(),
@@ -449,7 +436,7 @@ function buildReferences(refs = []) {
   return nodes;
 }
 
-// ─── ASOSIY BUILDER ────────────────────────────────────────
+// в”Ђв”Ђв”Ђ ASOSIY BUILDER в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 async function buildDocument(fullSpec, pngCache) {
   const { meta, chapters = [], references = [] } = fullSpec;
 
@@ -461,7 +448,7 @@ async function buildDocument(fullSpec, pngCache) {
 
   const contentNodes = [];
   chapters.forEach((ch, i) => {
-    // Birinchi bo'lim REJA'dan keyin keladi — pageBreak allaqachon REJA oxirida bor
+    // Birinchi bo'lim REJA'dan keyin keladi вЂ” pageBreak allaqachon REJA oxirida bor
     const chNodes = buildChapterContent(ch, pngCache, i === 0);
     contentNodes.push(...chNodes);
   });
@@ -483,7 +470,7 @@ async function buildDocument(fullSpec, pngCache) {
       },
     },
     sections: [
-      // 1-sahifa: Muqova — raqamsiz
+      // 1-sahifa: Muqova вЂ” raqamsiz
       {
         properties: {
           page: {
@@ -493,7 +480,7 @@ async function buildDocument(fullSpec, pngCache) {
         footers: { default: new Footer({ children: [] }) },
         children: coverNodes,
       },
-      // 2+ sahifa: REJA + kontent — raqamlash 2-dan
+      // 2+ sahifa: REJA + kontent вЂ” raqamlash 2-dan
       {
         properties: {
           type: SectionType.NEXT_PAGE,
