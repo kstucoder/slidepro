@@ -124,32 +124,28 @@ async function prerenderMedia(chapters) {
   return cache;
 }
 
-// --- YANGI: sahifa/bo'lim hisoblash qoidalari ---
+// --- ASL: sahifa/bo'lim hisoblash qoidalari (oldingi versiya) ---
 function computeMustaqilStructure(pages) {
+  // Original simple behaviour: do not enforce complex main/sub counts.
   const p = Math.max(0, Number(pages) || 0);
-  // Har doim: Kirish(1) + Xulosa(1) + Adabiyotlar(1) = 3 sahifa
-  // Main bo'limlar: 10 sahifagacha = 3 ta; 10+ har qo'shilgan 5 sahifa uchun +1
-  const main = 3 + Math.floor(Math.max(0, p - 10) / 5);
+  const main = Math.max(3, Math.min(5, Math.round((p - 3) / 4) || 3));
   const availableForInner = Math.max(0, p - 3);
-  const inner = Math.floor(availableForInner / 1.5);
-  // Taqsimlash
+  const inner = Math.max(0, Math.floor(availableForInner / 2));
   const subCounts = [];
-  if (main <= 0) return { pages: p, main: 0, inner: 0, availableForInner, subCounts };
-  let base = Math.floor(inner / main);
-  let rem = inner % main;
-  for (let i = 0; i < main; i++) {
-    const v = base + (rem > 0 ? 1 : 0);
-    subCounts.push(v);
-    if (rem > 0) rem--;
+  if (main > 0) {
+    let base = Math.floor(inner / main);
+    let rem = inner % main;
+    for (let i = 0; i < main; i++) {
+      const v = base + (rem > 0 ? 1 : 0);
+      subCounts.push(v);
+      if (rem > 0) rem--;
+    }
   }
   return { pages: p, main, inner, availableForInner, subCounts };
 }
 
 // Agar kerak bo'lsa pages ni minimal qo'shish orqali inner integer bo'lishini ta'minlash
 function adjustPagesForInner(requestedPages) {
-  // inner = floor((pages - 3) / 1.5)
-  // We allow minimal increment so that floor changes only when needed; keep requestedPages as-is —
-  // current approach: don't auto-increase pages silently. But if you want minimal increase, implement here.
   return Number(requestedPages) || 0;
 }
 
@@ -197,14 +193,14 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
     return true;
   });
 
-  // --- YANGI: mustaqil strukturani kafolatlash (Kirish + main + Xulosa)
+  // --- ASL: mustaqil strukturani ozgina moslash (Kirish + main + Xulosa) ---
   const struct = computeMustaqilStructure(pages);
   // Collect existing mains (non-intro/non-conclusion)
   const isMain = (c) => c.id !== "intro" && c.id !== "conclusion";
   let mains = outline.chapters.filter(isMain);
   const others = outline.chapters.filter(c => !isMain(c));
 
-  // If mains less than required, append synthetic ones
+  // If mains less than required, append synthetic ones (simple round-robin)
   if (mains.length < struct.main) {
     const ANGLES = [
       { title: "Mavzuning nazariy asoslari", role: "theory" },
@@ -236,18 +232,16 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   const conc  = others.find(c => c.id === "conclusion");
   outline.chapters = [ ...(intro ? [intro] : []), ...mains, ...(conc ? [conc] : []) ];
 
-  // Assign subCounts to mains and compute word_targets based on pages and 1.5 pages per sub
+  // Assign subCounts to mains and compute word_targets based on pages and a simple rule
   const subCounts = struct.subCounts; // length == struct.main
   // Words per page
   const totalWords = wordsForPages(struct.pages);
   const wordsPerPage = struct.pages > 0 ? totalWords / struct.pages : 400;
 
-  // For each main, compute page allocation = sub_count * 1.5 (pages for subsections) + 1 page for main header/body
-  // We'll distribute remaining pages proportionally if rounding issues
-  const pagesAllocated = subCounts.map(sc => sc * 1.5 + 1); // 1 page reserved for main's own text
+  // For each main, compute page allocation = sub_count * 2 (approx) + 1 page for main header/body
+  const pagesAllocated = subCounts.map(sc => sc * 2 + 1);
   const sumAllocated = pagesAllocated.reduce((s,x)=>s+x,0);
-  // If sumAllocated != struct.pages - (intro+conclusion+references handled separately), scale proportionally
-  const contentPages = Math.max(0, struct.pages - 3); // excluding intro/conclusion/references
+  const contentPages = Math.max(0, struct.pages - 3);
   let scale = 1;
   if (sumAllocated > 0) scale = contentPages / sumAllocated;
   const pagesPerMain = pagesAllocated.map(pv => Math.max(1, pv * scale));
@@ -268,7 +262,6 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   console.log("[mustaqil] 2-pass: boblar parallel...");
   const results = await Promise.allSettled(
     outline.chapters.map((ch, i) => {
-      // Skip intro/conclusion generation from chapter LLM? We still ask LLM but with role info
       const { usedFormulas, usedCharts } = buildBanLists(outline, i);
       return callLLM({
         system: chapterSystemPrompt(),
@@ -281,7 +274,6 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
       }).then(t => {
         const p = parseChapter(t);
         let content = p.content || [];
-        // Filter forbidden headings in main chapters
         const isMainChapter = ch.id !== "intro" && ch.id !== "conclusion";
         if (isMainChapter) {
           content = content.filter(item => {
@@ -371,7 +363,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
             system: chapterSystemPrompt(),
             user: chapterUserPrompt({ chapter: ch, outline, language: lang, sourceContent,
               chapterIndex: chIdx, totalChapters: outline.chapters.length, usedFormulas: finalFBan, usedCharts: finalCBan
-            }) + `\n\n// QAYTA: oldingi urinish muammoli edi — quyidagi formulalar/grafiklar ishlatilmasin:\n${finalFBan.length?"Formulalar: "+finalFBan.join(", "):""}${finalCBan.length?"\nGrafiklar: "+finalCBan.join(", "):""}`,
+            }) + `\n\n// QAYTA: oldingi urinish muammoli edi — quyidagi formulalar/grafiklar ishlatilmasin:\n${finalFBan.length?"Formulalar: "+finalFBan.join(", "):""}${finalCBan.length?"\nGraf[...]":""}`,
             llm, maxTokens: 6000,
           }).then(t => {
             const p = parseChapter(t);
@@ -434,7 +426,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
           const finalCBan = allBanCharts.filter(c=>!thisCharts.includes(c));
           return callLLM({
             system: `Sen akademik mustaqil ish yozuvchisi mutaxassissan. FAQAT JSON qaytarasan.`,
-            user: `"${outline.meta?.title||topic}" — "${ch.title}" bo'limi uchun qo'shimcha kontent.\nHozir ${countWords(ch.content)} so'z, kamida ${deficit} so'z qo'shimcha kerak.\nTil: ${lang}. Akademik, rasmiy uslub.\nKamida ${Math.max(3,Math.ceil(deficit/110))} ta paragraf (100-140 so'z/paragraf).\nMavjud kontentni TAKRORLAMASDAN, YANGI jihatlar, misollar, tahlillar qo'sh.\n${finalFBan.length ? "Bu formulalar ishlatilmagan: "+finalFBan.join(", ") : ""}\n${finalCBan.length ? "Bu grafik sarlavhalari ishlatilmagan: "+finalCBan.join(", ") : ""}\nFAQAT JSON: {\"content\":[{\"type\":\"paragraph\",\"text\":\"...\"},...] }`,
+            user: `"${outline.meta?.title||topic}" — "${ch.title}" bo'limi uchun qo'shimcha kontent.\nHozir ${countWords(ch.content)} so'z, kamida ${deficit} so'z qo'shimcha kerak.\nTil: ${lang}. Akademik, rasmiy, chuqur tahliliy uslub.\nKamida ${Math.max(3,Math.ceil(deficit/110))} ta paragraf (100-140 so'z/paragraf).\nMavjud kontentni TAKRORLAMASDAN, YANGI jihatlar, misollar, tahlillar qo'sh.\n${finalFBan.length ? "Bu formulalar ishlatilmagan: "+finalFBan.join(", ") : ""}\n${finalCBan.length ? "Bu grafik sarlavhalari ishlatilmagan: "+finalCBan.join(", ") : ""}\nFAQAT JSON: {\"content\":[{\"type\":\"paragraph\",\"text\":\"...\"},...] }`,
             llm, maxTokens: 4000,
           }).then(t=>({ i, extra: parseChapter(t).content||[] }))
           .catch(e=>{ console.warn("[mustaqil] expand xato:", e.message); return {i,extra:[]}; });
