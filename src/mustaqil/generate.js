@@ -186,6 +186,45 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
     return true;
   });
 
+  // ── ASOSIY BOBLAR SONI KAFOLATI: 3-5 (Reja bandlari) ──
+  {
+    const isMain = (c) => c.id !== "intro" && c.id !== "conclusion";
+    let mains = outline.chapters.filter(isMain);
+    const others = outline.chapters.filter(c => !isMain(c));
+    const restWt = outline.total_words_target || totalWt;
+    if (mains.length < 3) {
+      const ANGLES = [
+        { title: "Mavzuning nazariy asoslari", role: "theory" },
+        { title: "Amaliy tahlil va hozirgi holat", role: "analysis" },
+        { title: "Muammolar va ularning yechimlari", role: "problems" },
+        { title: "Istiqbol va takliflar", role: "proposals" },
+      ];
+      let ai = 0;
+      while (mains.length < 3) {
+        const a = ANGLES[ai++ % ANGLES.length];
+        mains.push({ id: "ch" + mains.length + 1, title: a.title, role: a.role,
+          word_target: Math.round(restWt / 3), sections: [], formula_count: 0, chart_count: 0, table_count: 0 });
+      }
+      console.log("[mustaqil] boblar soni 3 dan kam edi — " + mains.length + " taga to'ldirildi (sintetik)");
+    } else if (mains.length > 5) {
+      // ortiqcha boblarni oxiridan o'chirib, word_target'ni qolganlarga proporsional taqsimlash
+      const keep = mains.slice(0, 5);
+      const extra = mains.slice(5);
+      const extraWt = extra.reduce((s, c) => s + (Number(c.word_target) || 200), 0);
+      const keepSum = keep.reduce((s, c) => s + (Number(c.word_target) || 200), 0) || 1;
+      keep.forEach(c => { c.word_target = Math.round((Number(c.word_target) || 200) + extraWt * ((Number(c.word_target) || 200) / keepSum)); });
+      mains = keep;
+      console.log("[mustaqil] boblar soni 5 dan ko'p edi — " + extra.length + " ta ortiqcha olib tashlandi, hajmi qolganlarga taqsimlandi");
+    }
+    // id larni qayta kanonlashtirish: ch1..chN
+    mains.forEach((c, k) => { c.id = "ch" + (k+1); });
+    // tartib: intro birinchi, keyin mains, oxirida conclusion
+    const intro = others.find(c => c.id === "intro");
+    const conc  = others.find(c => c.id === "conclusion");
+    outline.chapters = [ ...(intro ? [intro] : []), ...mains, ...(conc ? [conc] : []) ];
+    console.log("[mustaqil] yakuniy tuzilma: Kirish + " + mains.length + " asosiy bob + Xulosa (Reja bandlari 3-5 kafolatlangan)");
+  }
+
   // Formula va grafik rejalashtirishini loglash
   const fLog = outline.chapters
     .filter(c=>(c.formula_plans||c.formula_latex||[]).length>0)
@@ -233,6 +272,45 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
             }
             return true;
           });
+
+  // ── ASOSIY BOBLAR SONI KAFOLATI: 3-5 (Reja bandlari) ──
+  {
+    const isMain = (c) => c.id !== "intro" && c.id !== "conclusion";
+    let mains = outline.chapters.filter(isMain);
+    const others = outline.chapters.filter(c => !isMain(c));
+    const restWt = outline.total_words_target || totalWt;
+    if (mains.length < 3) {
+      const ANGLES = [
+        { title: "Mavzuning nazariy asoslari", role: "theory" },
+        { title: "Amaliy tahlil va hozirgi holat", role: "analysis" },
+        { title: "Muammolar va ularning yechimlari", role: "problems" },
+        { title: "Istiqbol va takliflar", role: "proposals" },
+      ];
+      let ai = 0;
+      while (mains.length < 3) {
+        const a = ANGLES[ai++ % ANGLES.length];
+        mains.push({ id: "ch" + mains.length + 1, title: a.title, role: a.role,
+          word_target: Math.round(restWt / 3), sections: [], formula_count: 0, chart_count: 0, table_count: 0 });
+      }
+      console.log("[mustaqil] boblar soni 3 dan kam edi — " + mains.length + " taga to'ldirildi (sintetik)");
+    } else if (mains.length > 5) {
+      // ortiqcha boblarni oxiridan o'chirib, word_target'ni qolganlarga proporsional taqsimlash
+      const keep = mains.slice(0, 5);
+      const extra = mains.slice(5);
+      const extraWt = extra.reduce((s, c) => s + (Number(c.word_target) || 200), 0);
+      const keepSum = keep.reduce((s, c) => s + (Number(c.word_target) || 200), 0) || 1;
+      keep.forEach(c => { c.word_target = Math.round((Number(c.word_target) || 200) + extraWt * ((Number(c.word_target) || 200) / keepSum)); });
+      mains = keep;
+      console.log("[mustaqil] boblar soni 5 dan ko'p edi — " + extra.length + " ta ortiqcha olib tashlandi, hajmi qolganlarga taqsimlandi");
+    }
+    // id larni qayta kanonlashtirish: ch1..chN
+    mains.forEach((c, k) => { c.id = "ch" + (k+1); });
+    // tartib: intro birinchi, keyin mains, oxirida conclusion
+    const intro = others.find(c => c.id === "intro");
+    const conc  = others.find(c => c.id === "conclusion");
+    outline.chapters = [ ...(intro ? [intro] : []), ...mains, ...(conc ? [conc] : []) ];
+    console.log("[mustaqil] yakuniy tuzilma: Kirish + " + mains.length + " asosiy bob + Xulosa (Reja bandlari 3-5 kafolatlangan)");
+  }
         }
         return { ...ch, content };
       }).catch(e => {
@@ -354,6 +432,45 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
                 }
                 return true;
               });
+
+  // ── ASOSIY BOBLAR SONI KAFOLATI: 3-5 (Reja bandlari) ──
+  {
+    const isMain = (c) => c.id !== "intro" && c.id !== "conclusion";
+    let mains = outline.chapters.filter(isMain);
+    const others = outline.chapters.filter(c => !isMain(c));
+    const restWt = outline.total_words_target || totalWt;
+    if (mains.length < 3) {
+      const ANGLES = [
+        { title: "Mavzuning nazariy asoslari", role: "theory" },
+        { title: "Amaliy tahlil va hozirgi holat", role: "analysis" },
+        { title: "Muammolar va ularning yechimlari", role: "problems" },
+        { title: "Istiqbol va takliflar", role: "proposals" },
+      ];
+      let ai = 0;
+      while (mains.length < 3) {
+        const a = ANGLES[ai++ % ANGLES.length];
+        mains.push({ id: "ch" + mains.length + 1, title: a.title, role: a.role,
+          word_target: Math.round(restWt / 3), sections: [], formula_count: 0, chart_count: 0, table_count: 0 });
+      }
+      console.log("[mustaqil] boblar soni 3 dan kam edi — " + mains.length + " taga to'ldirildi (sintetik)");
+    } else if (mains.length > 5) {
+      // ortiqcha boblarni oxiridan o'chirib, word_target'ni qolganlarga proporsional taqsimlash
+      const keep = mains.slice(0, 5);
+      const extra = mains.slice(5);
+      const extraWt = extra.reduce((s, c) => s + (Number(c.word_target) || 200), 0);
+      const keepSum = keep.reduce((s, c) => s + (Number(c.word_target) || 200), 0) || 1;
+      keep.forEach(c => { c.word_target = Math.round((Number(c.word_target) || 200) + extraWt * ((Number(c.word_target) || 200) / keepSum)); });
+      mains = keep;
+      console.log("[mustaqil] boblar soni 5 dan ko'p edi — " + extra.length + " ta ortiqcha olib tashlandi, hajmi qolganlarga taqsimlandi");
+    }
+    // id larni qayta kanonlashtirish: ch1..chN
+    mains.forEach((c, k) => { c.id = "ch" + (k+1); });
+    // tartib: intro birinchi, keyin mains, oxirida conclusion
+    const intro = others.find(c => c.id === "intro");
+    const conc  = others.find(c => c.id === "conclusion");
+    outline.chapters = [ ...(intro ? [intro] : []), ...mains, ...(conc ? [conc] : []) ];
+    console.log("[mustaqil] yakuniy tuzilma: Kirish + " + mains.length + " asosiy bob + Xulosa (Reja bandlari 3-5 kafolatlangan)");
+  }
             }
             return { chIdx, content };
           }).catch(e => {
@@ -401,6 +518,45 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
           }
           return true;
         });
+
+  // ── ASOSIY BOBLAR SONI KAFOLATI: 3-5 (Reja bandlari) ──
+  {
+    const isMain = (c) => c.id !== "intro" && c.id !== "conclusion";
+    let mains = outline.chapters.filter(isMain);
+    const others = outline.chapters.filter(c => !isMain(c));
+    const restWt = outline.total_words_target || totalWt;
+    if (mains.length < 3) {
+      const ANGLES = [
+        { title: "Mavzuning nazariy asoslari", role: "theory" },
+        { title: "Amaliy tahlil va hozirgi holat", role: "analysis" },
+        { title: "Muammolar va ularning yechimlari", role: "problems" },
+        { title: "Istiqbol va takliflar", role: "proposals" },
+      ];
+      let ai = 0;
+      while (mains.length < 3) {
+        const a = ANGLES[ai++ % ANGLES.length];
+        mains.push({ id: "ch" + mains.length + 1, title: a.title, role: a.role,
+          word_target: Math.round(restWt / 3), sections: [], formula_count: 0, chart_count: 0, table_count: 0 });
+      }
+      console.log("[mustaqil] boblar soni 3 dan kam edi — " + mains.length + " taga to'ldirildi (sintetik)");
+    } else if (mains.length > 5) {
+      // ortiqcha boblarni oxiridan o'chirib, word_target'ni qolganlarga proporsional taqsimlash
+      const keep = mains.slice(0, 5);
+      const extra = mains.slice(5);
+      const extraWt = extra.reduce((s, c) => s + (Number(c.word_target) || 200), 0);
+      const keepSum = keep.reduce((s, c) => s + (Number(c.word_target) || 200), 0) || 1;
+      keep.forEach(c => { c.word_target = Math.round((Number(c.word_target) || 200) + extraWt * ((Number(c.word_target) || 200) / keepSum)); });
+      mains = keep;
+      console.log("[mustaqil] boblar soni 5 dan ko'p edi — " + extra.length + " ta ortiqcha olib tashlandi, hajmi qolganlarga taqsimlandi");
+    }
+    // id larni qayta kanonlashtirish: ch1..chN
+    mains.forEach((c, k) => { c.id = "ch" + (k+1); });
+    // tartib: intro birinchi, keyin mains, oxirida conclusion
+    const intro = others.find(c => c.id === "intro");
+    const conc  = others.find(c => c.id === "conclusion");
+    outline.chapters = [ ...(intro ? [intro] : []), ...mains, ...(conc ? [conc] : []) ];
+    console.log("[mustaqil] yakuniy tuzilma: Kirish + " + mains.length + " asosiy bob + Xulosa (Reja bandlari 3-5 kafolatlangan)");
+  }
       }
     });
   } else {

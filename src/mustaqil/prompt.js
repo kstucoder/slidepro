@@ -109,7 +109,7 @@ JSON strukturasida qaytargin:
 
 TUZILMA QOIDALARI:
 - DAIM: 1 ta Kirish (id="intro") в†’ asosiy bo'limlar в†’ 1 ta Xulosa (id="conclusion")
-- Asosiy bo'limlar soni: ${pages <= 15 ? "1-2" : pages <= 25 ? "2-3" : "3-4"} ta
+- Asosiy bo'limlar soni: DAIM 3-5 ta (${pages <= 15 ? "3-4" : "4-5"} ta tavsiya etiladi) — KAMIDA 3, KO'PI BILAN 5
 - Har asosiy bo'lim BOSHQA JIHATNI yoritsin: nazariy / amaliy / taqqoslov / prognoz
 - "bob" so'zi sarlavhada BO'LMASIN
 - word_target yig'indisi в‰€ ${totalWords}
