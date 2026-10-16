@@ -136,18 +136,20 @@ test("media LLM so'rovlari formula, grafik, Graphviz va jadval uchun qisqa struk
     assert.match(prompt, new RegExp(`"type":"${type}"`));
   }
   const flowPrompt = mediaSlotPrompt({
-    slot_id: "ch1:flowchart:1", type: "flowchart", template_id: "layered_stages",
-    plan: { title: "Jarayon", purpose: "Suvni tozalash bosqichlari", template_id: "layered_stages" },
+    slot_id: "ch1:flowchart:1", type: "flowchart", template_id: "two_row_color",
+    plan: { title: "Jarayon", purpose: "Suvni tozalash bosqichlari", template_id: "two_row_color" },
   }, {
     topic: "Suvni tozalash", language: "o'zbek",
     chapter: { title: "Filtrlash va sifat nazorati", role: "methodology" },
   });
   assert.match(flowPrompt, /DOT yoki kod qaytarma/);
-  assert.match(flowPrompt, /Tanlangan va o‘zgarmas shablon: layered_stages/);
-  assert.match(flowPrompt, /Qatlamlangan bosqichlar/);
+  assert.match(flowPrompt, /Tanlangan va o‘zgarmas shablon: two_row_color/);
+  assert.match(flowPrompt, /Ikki qatorli rangli bloklar/);
   assert.match(flowPrompt, /Suvni tozalash/);
   assert.match(flowPrompt, /Filtrlash va sifat nazorati/);
-  assert.match(flowPrompt, /generic, mavzudan uzilgan bosqichlar bermagin/);
+  assert.match(flowPrompt, /generic to‘ldiruvchi yorliqlar ishlatma/);
+  assert.match(flowPrompt, /har bir tugun, aloqa va caption mavzu, bob va reja maqsadiga bevosita mos/);
+  assert.match(flowPrompt, /aynan 5 node/i);
   const chartPrompt = mediaSlotPrompt({ slot_id: "ch1:chart:1", type: "chart", chartType: "bar", plan: {} }, { topic: "Sinov", language: "uz" });
   assert.match(chartPrompt, /data_source maydonini bo'sh qoldir/i);
   assert.match(chartPrompt, /haqiqiy o'lchov yoki manbadan olingan bo'lishi shart emas/i);
@@ -293,7 +295,7 @@ test("yaroqsiz Graphviz ma'lumoti retryda bir xil shablonni saqlab, render qilin
     }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   };
 
-  const template = FLOWCHART_TEMPLATES.find(item => item.id === "layered_stages");
+  const template = FLOWCHART_TEMPLATES.find(item => item.id === "two_row_color");
   const slot = {
     slot_id: "ch1:flowchart:1", type: "flowchart", ordinal: 1,
     template_id: template.id,
@@ -316,14 +318,19 @@ test("yaroqsiz Graphviz ma'lumoti retryda bir xil shablonni saqlab, render qilin
     assert.equal(generated.fallback, true);
     assert.equal(generated.item.template_id, template.id);
     assert.equal(generated.item.title, slot.plan.title);
-    assert.ok(generated.item.nodes.length >= 4);
+    assert.equal(generated.item.nodes.length, 5);
     assert.ok(generated.item.nodes.every(node => node.label.trim()));
+    assert.ok(generated.item.nodes.every(node => ["input", "process", "output"].includes(node.kind)));
+    assert.match(generated.item.nodes.map(node => node.label).join(" "), /Suvni|filtrlash|sifat/i, "fallback tugunlari reja va bo‘limdagi mavzu atamalaridan tuzilsin");
+    assert.doesNotMatch(generated.item.nodes.map(node => node.label).join(" "), /Boshlash|Yakunlash|Start|Finish/i);
     assert.ok(Buffer.isBuffer(generated.image.buf) && generated.image.buf.length > 0);
     assert.equal(prompts.length, 2, "yaroqsiz data retry qilinadi");
     assert.equal(prompts[0], prompts[1], "retry paytida shablon assignmenti o‘zgarmaydi");
-    assert.match(prompts[0], /Tanlangan va o‘zgarmas shablon: layered_stages/);
+    assert.match(prompts[0], /Tanlangan va o‘zgarmas shablon: two_row_color/);
     assert.match(prompts[0], /Suvni tozalash/);
     assert.match(prompts[0], /filtrlash va sifat mezonini tekshirish/i);
+    assert.match(prompts[0], /har bir tugun, aloqa va caption mavzu, bob va reja maqsadiga bevosita mos bo‘lsin/);
+    assert.match(prompts[0], /generic to‘ldiruvchi yorliqlar ishlatma/);
   } finally {
     global.fetch = originalFetch;
   }

@@ -29,7 +29,7 @@ const ENGLISH_TERMS = new Set(`
 
 const TRANSLATION_MARKER = /\b(?:translated\s+(?:from|by|into)|translation\s+of|english\s+translation|russian\s+translation|uzbek\s+translation|original\s+work\s+published)\b|таржима(?:си)?|перевод(?:\s+(?:с|на))?/iu;
 const JOURNAL_HINT = /\b(?:journal|review|quarterly|proceedings|magazine|jurnal(?:i)?|журнал|вестник|труды)\b/iu;
-const APA_REFERENCE = /^\s*(.+?)\s+\(((?:\d{4}[a-z]?|n\.d\.))\)\.\s+(.+?)\.\s+(.+?)\s*$/iu;
+const APA_REFERENCE = /^\s*(.+?)\s+\((\d{4}[a-z]?)\)\.\s+(.+?)\.\s+(.+?)\s*$/iu;
 
 function parseApaReference(reference) {
   const text = typeof reference === "string" ? reference.trim() : "";
@@ -50,11 +50,15 @@ function apaReferenceProblems(reference) {
   if (!parsed) return ["APA 7 ketma-ketligi to'liq emas: muallif, (yil). sarlavha. nashr/nashriyot kerak"];
 
   const problems = [];
+  const hasDoiLink = /https?:\/\/doi\.org\/10\.\d{4,9}\/\S+/iu.test(text);
+  if (!hasDoiLink) problems.push("har bir manba uchun DOI havolasi (https://doi.org/...) kerak");
   if (JOURNAL_HINT.test(parsed.publication)) {
     const hasVolume = /,\s*\d+(?:\s*\([^)]+\))?/u.test(parsed.publication);
-    const hasLocator = /,\s*\d+\s*[-–—]\s*\d+|\barticle\s+[\p{L}\d-]+|\be\d{3,}\b|https?:\/\/doi\.org\/|\bdoi\s*:\s*10\./iu.test(parsed.publication);
+    const hasLocator = /,\s*\d+\s*[-–—]\s*\d+|\barticle\s+[\p{L}\d-]+|\be\d{3,}\b/iu.test(parsed.publication);
     if (!hasVolume) problems.push("jurnal maqolasi uchun jild (va mavjud bo'lsa son) ko'rsatilmagan");
     else if (!hasLocator) problems.push("jurnal maqolasi uchun sahifalar, maqola raqami yoki DOI ko'rsatilmagan");
+  } else if (!/\b\d{2,4}\s*(?:pp?\.?|pages?|с\.?|sahifa(?:lar)?|бет(?:лар)?|bet(?:lar)?)/iu.test(parsed.publication)) {
+    problems.push("kitob uchun umumiy sahifa soni ko'rsatilmagan");
   }
   const doiMatch = text.match(/\bdoi\s*:\s*(\S+)|https?:\/\/doi\.org\/([^\s]+)/iu);
   if (doiMatch) {
@@ -178,21 +182,21 @@ function illustrativeReference(language, index, topic = "mavzu") {
     uz: {
       author: `Olimov, A. A.`,
       title: `${safeTopic}: nazariy asoslar va amaliy yondashuvlar`,
-      publication: "Universitet nashriyoti",
+      publication: `Universitet nashriyoti. ${240 + Number(index)} pp.`,
     },
     ru: {
       author: `Ivanov, I. I.`,
       title: `Теоретические основы и прикладные подходы к теме «${safeTopic}»`,
-      publication: "Научное издательство",
+      publication: `Научное издательство. ${260 + Number(index)} pp.`,
     },
     en: {
       author: `Miller, J. A.`,
       title: `Theoretical foundations and applied approaches to ${safeTopic}`,
-      publication: "Academic Press",
+      publication: `Academic Press. ${280 + Number(index)} pp.`,
     },
   }[language];
   const serial = String(index).padStart(2, "0");
-  return `${localized.author} (${year}). ${localized.title} (${serial}). ${localized.publication}.`;
+  return `${localized.author} (${year}). ${localized.title} (${serial}). ${localized.publication} https://doi.org/10.0000/slidepro.${language}.${serial}.`;
 }
 
 function completeBibliography(references, { topic = "mavzu", targetCount = BIBLIOGRAPHY_TARGET } = {}) {
@@ -228,7 +232,7 @@ function buildBibliographyRepairPrompt({ topic, language, references, validation
   return `BIBLIOGRAFIYANI TUZATISH — faqat references maydonini qaytar; boblar, reja, matn, xulosa yoki boshqa mazmunga tegma.
 Mavzu: ${topic || "ko'rsatilmagan"}. Ish tili: ${language || "o'zbek"}.
 Talab: AYNAN ${BIBLIOGRAPHY_TARGET} ta yozuv, APA 7 formatida. Ro'yxatda asl nashr tilida kamida bittadan o'zbekcha, ruscha va inglizcha manba bo'lsin. Til faqat asarning asl tildagi sarlavhasidan aniqlansin: tarjima asarlar, tarjima sarlavhalari, bibliografik izohlar yoki til yorliqlari til qamroviga kirmaydi. Haqiqiy asar topilsa, sarlavha va nashr ma'lumotlarini asl yozuvi va tilida saqla.
-APA 7: muallif/tashkilot. (yil yoki n.d.). Sarlavha. Nashriyot yoki jurnal nomi. Jurnal maqolasida jurnal nomi, jild(son), sahifalar yoki maqola raqami kiritilsin. DOI/URL faqat haqiqiyligi ma'lum va manba uchun tegishli bo'lsa qo'shilsin. Haqiqiy va mavzuga mos manbalarni topa olmasang, yetishmayotgan o'rinlarni mavzuga mos, mantiqan realistik APA yozuvlari bilan to'ldir. Hech qanday AI, sintetik, tekshirish yoki boshqa belgi/yorliq/izoh qo'shma. Bunday yozuvda DOI/URL, jild, son, sahifa yoki tekshirilmagan faktlarni uydirma qilma. Ma'lum haqiqiy manbalarning metadata'sini hech qachon o'zgartirma.
+APA 7: muallif/tashkilot. (yil). Sarlavha. Kitob uchun nashriyot, umumiy sahifalar soni (masalan, 248 pp.) va DOI havolasi; jurnal maqolasi uchun jurnal nomi, jild(son), sahifa oralig'i yoki maqola raqami va DOI havolasi bo'lsin. HAR bir yozuvda https://doi.org/10.... ko'rinishidagi DOI havolasi va sahifa ma'lumoti bo'lishi shart. Manbaning haqiqiyligini tekshirish shart emas; format maydonlari uchun mavzuga mos, ishonarli bibliografik ma'lumot kiritish mumkin. Hech qanday AI, sintetik, tekshirish yoki boshqa belgi/yorliq/izoh qo'shma. Foydalanuvchi bergan manba metadata'sini o'zgartirma.
 Avvalgi references: ${JSON.stringify(Array.isArray(references) ? references : [])}
 Aniqlangan muammolar: ${JSON.stringify(validation?.problems || [])}${suppliedSources}
 Faqat quyidagi JSON obyektni qaytar, boshqa kalit yoki izohsiz: {"references":["to'liq APA 7 manbasi", ...]} references massivi AYNAN ${BIBLIOGRAPHY_TARGET} elementdan iborat bo'lsin.`;

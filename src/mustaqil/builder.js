@@ -12,7 +12,7 @@ const {
 } = require("docx");
 const { normalizeHeadingTitle } = require("./headings");
 const { renumberMedia } = require("./media-numbering");
-const { sortReferencesAPA, parseApaPartsForDisplay } = require("./references");
+const { completeBibliography, sortReferencesAPA, parseApaPartsForDisplay } = require("./references");
 const { cleanMediaText, isSyntheticSource } = require("./media-captions");
 
 const mm = (n) => Math.round(n * 56.692);
@@ -23,6 +23,8 @@ const SMALL_SIZE = 24;       // 12pt (muqova uchun)
 const LINE_SPACING = { line: 360, lineRule: "auto" };  // 1.5
 const INDENT = mm(12.5);     // 1.25 sm
 const BLACK = "000000";
+const A4_PAGE_WIDTH_PX = 210 / 25.4 * 96;
+const A4_PAGE_HEIGHT_PX = 297 / 25.4 * 96;
 
 // ─── inline LaTeX tozalash (sarlavha/izoh uchun — matn qaytaradi) ──
 function cleanInlineLatex(text) {
@@ -189,13 +191,18 @@ function numberedMediaCaption(number, type, ...values) {
 }
 
 // ─── rasm bloki ────────────────────────────────────────────
-function imageBlock(media, caption) {
+function imageBlock(media, caption, { maxPageFraction } = {}) {
   const buf = media.buf || media;
   const w = media.width || 440;
   const h = media.height || 200;
+  const scale = maxPageFraction
+    ? Math.min(1, A4_PAGE_WIDTH_PX * maxPageFraction / w, A4_PAGE_HEIGHT_PX * maxPageFraction / h)
+    : 1;
+  const imageWidth = Math.max(1, Math.round(w * scale));
+  const imageHeight = Math.max(1, Math.round(h * scale));
   const nodes = [];
   nodes.push(new Paragraph({
-    children: [new ImageRun({ data: buf, transformation: { width: w, height: h }, type: "png" })],
+    children: [new ImageRun({ data: buf, transformation: { width: imageWidth, height: imageHeight }, type: "png" })],
     spacing: { before: mm(3), after: mm(1) },
     keepNext: Boolean(caption),
     keepLines: true,
@@ -431,7 +438,7 @@ function buildChapterContent(chapter, pngCache, isFirst, mainNumber = 0) {
         const media = pngCache && pngCache.get("d_" + item.number);
         const caption = numberedMediaCaption(item.number, "rasm", item.caption, item.title);
         if (media) {
-          nodes.push(...imageBlock(media, caption));
+          nodes.push(...imageBlock(media, caption, { maxPageFraction: 0.6 }));
         } else {
           console.warn(`[mustaqil] flowchart #${item.number} render qilinmagan — matn ko'rinishida chiqariladi`);
           nodes.push(captionPara(caption));
@@ -454,29 +461,29 @@ function buildChapterContent(chapter, pngCache, isFirst, mainNumber = 0) {
 }
 
 // ─── ADABIYOTLAR RO'YXATI ──────────────────────────────────
-function buildReferences(refs = []) {
+function buildReferences(refs = [], topic = "mavzu") {
   const nodes = [
     new Paragraph({
-      children: [new TextRun({ text: "Foydalanilgan adabiyotlar", font: FONT, size: 24, bold: true, color: BLACK })],
+      children: [new TextRun({ text: "Foydalanilgan adabiyotlar ro'yxati", font: FONT, size: 24, bold: true, color: BLACK })],
       pageBreakBefore: true,
       spacing: { line: 480, lineRule: "auto", before: 0, after: 0 },
       alignment: AlignmentType.CENTER,
       indent: undefined,
     }),
   ];
-  sortReferencesAPA(refs).forEach((ref) => {
+  sortReferencesAPA(completeBibliography(refs, { topic })).forEach((ref, index) => {
     const parts = parseApaPartsForDisplay(ref);
     const run = (text, italics = false) => new TextRun({ text: cleanInlineLatex(text), font: FONT, size: 24, italics, color: BLACK });
     const children = parts
-      ? [run(`${parts.authorDate} `), ...(parts.kind === "journal"
+      ? [run(`${index + 1}. ${parts.authorDate} `), ...(parts.kind === "journal"
         ? [run(parts.title), run(". "), run(parts.journal, true), run(", "), run(parts.volume, true), ...(parts.issue ? [run(`(${parts.issue})`)] : []), run(parts.suffix)]
         : [run(parts.title, true), run(`. ${parts.publication}`)])]
-      : [run(ref)];
+      : [run(`${index + 1}. ${ref}`)];
     nodes.push(new Paragraph({
       children,
       alignment: AlignmentType.LEFT,
-      spacing: { line: 480, lineRule: "auto", before: 0, after: 0 },
-      indent: { left: mm(12.7), hanging: mm(12.7) },
+      spacing: { line: 300, lineRule: "auto", before: 0, after: mm(1) },
+      indent: { left: mm(8), hanging: mm(8) },
     }));
   });
   return nodes;
@@ -502,7 +509,7 @@ async function buildDocument(fullSpec, pngCache) {
     contentNodes.push(...chNodes);
   });
 
-  const refNodes = buildReferences(references);
+  const refNodes = buildReferences(references, meta?.title);
 
   const footerPara = new Paragraph({
     children: [new TextRun({ children: [PageNumber.CURRENT], font: FONT, size: 24, color: BLACK })],

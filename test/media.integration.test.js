@@ -48,20 +48,21 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
 
   const flowchart = await renderFlowchart({
     type: "flowchart",
-    title: "Ichimlik suvini tozalash oqimi",
+    title: "Ichimlik suvini tozalash tarkibi",
     nodes: [
-      { id: "source", label: "Xom suv manbai", kind: "start" },
-      { id: "filter", label: "Filtrlash", kind: "process" },
-      { id: "check", label: "Sifat maqbulmi?", kind: "decision" },
-      { id: "deliver", label: "Iste'molchiga uzatish", kind: "end" },
+      { id: "source", label: "Xom suv manbai", kind: "input" },
+      { id: "filter", label: "Filtrlash tizimi", kind: "process" },
+      { id: "quality", label: "Suv sifati mezoni", kind: "process" },
+      { id: "treatment", label: "Dezinfeksiya", kind: "process" },
+      { id: "deliver", label: "Ichimlik suvi ta'minoti", kind: "output" },
     ],
     edges: [
       { from: "source", to: "filter" },
-      { from: "filter", to: "check" },
-      { from: "check", to: "deliver", label: "Ha" },
-      { from: "check", to: "filter", label: "Yo'q" },
+      { from: "filter", to: "quality" },
+      { from: "treatment", to: "filter" },
+      { from: "filter", to: "deliver" },
     ],
-    caption: "Ichimlik suvini tozalash oqimi. Izoh: sxemada filtrlash va sifat nazoratining ketma-ketligi ko'rsatilgan.",
+    caption: "Izoh: suv manbai, filtrlash, dezinfeksiya va sifat mezonining o'zaro aloqalari.",
   });
   const flowchartMetadata = await sharp(flowchart.buf).metadata();
   assert.equal(flowchartMetadata.format, "png");
@@ -71,22 +72,19 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
 
   const controllerFlowchart = await renderFlowchart({
     type: "flowchart",
-    title: "PID rostlagichining boshqaruv algoritmi",
+    title: "PID boshqaruv tizimining tarkibi",
     nodes: [
-      { id: "begin", label: "O'lchashni boshlash", kind: "start" },
-      { id: "read", label: "Chiqish qiymatini datchikdan olish", kind: "input" },
-      { id: "compare", label: "Xatolikni topshiriq bilan solishtirish", kind: "process" },
-      { id: "within", label: "Xatolik ruxsat etilgan chegaradami?", kind: "decision" },
-      { id: "control", label: "Rostlagich boshqaruv ta'sirini hisoblaydi", kind: "process" },
-      { id: "finish", label: "Yangilangan qiymatni qayta o'lchash", kind: "end" },
+      { id: "setpoint", label: "Topshiriq signali", kind: "input" },
+      { id: "sensor", label: "Datchik o'lchovi", kind: "input" },
+      { id: "controller", label: "PID rostlagich", kind: "process" },
+      { id: "actuator", label: "Ijro mexanizmi", kind: "output" },
+      { id: "plant", label: "Boshqaruv obyekti", kind: "process" },
     ],
     edges: [
-      { from: "begin", to: "read" },
-      { from: "read", to: "compare" },
-      { from: "compare", to: "within" },
-      { from: "within", to: "finish", label: "Ha" },
-      { from: "within", to: "control", label: "Yo'q" },
-      { from: "control", to: "read", label: "Teskari aloqa" },
+      { from: "setpoint", to: "controller" },
+      { from: "sensor", to: "controller" },
+      { from: "controller", to: "actuator" },
+      { from: "actuator", to: "plant" },
     ],
   });
   assert.equal((await sharp(controllerFlowchart.buf).metadata()).format, "png");
@@ -108,10 +106,10 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
             labels: ["A", "B"], values: [1, 2], data_source: "sintetik sinov ma’lumoti",
           },
           {
-            type: "flowchart", number: 2, title: "Ichimlik suvini tozalash oqimi",
-            caption: "Ichimlik suvini tozalash oqimi. Izoh: sxemada filtrlash va sifat nazoratining ketma-ketligi ko'rsatilgan.",
-            nodes: [{ id: "start", label: "Boshlash", kind: "start" }, { id: "step", label: "Jarayon", kind: "process" }, { id: "check", label: "Shart", kind: "decision" }, { id: "end", label: "Yakun", kind: "end" }],
-            edges: [{ from: "start", to: "step" }, { from: "step", to: "check" }, { from: "check", to: "end", label: "Ha" }],
+            type: "flowchart", number: 2, title: "Ichimlik suvini tozalash tarkibi",
+            caption: "Ichimlik suvini tozalash tarkibi. Izoh: suv manbai, filtrlash, dezinfeksiya va sifat mezonining o'zaro aloqalari.",
+            nodes: [{ id: "source", label: "Xom suv manbai", kind: "input" }, { id: "filter", label: "Filtrlash tizimi", kind: "process" }, { id: "quality", label: "Suv sifati mezoni", kind: "process" }, { id: "treatment", label: "Dezinfeksiya", kind: "process" }, { id: "deliver", label: "Ichimlik suvi ta'minoti", kind: "output" }],
+            edges: [{ from: "source", to: "filter" }, { from: "filter", to: "quality" }, { from: "treatment", to: "filter" }, { from: "filter", to: "deliver" }],
           },
           { type: "table", number: 1, title: "Sinov jadvali", caption: "N-jadval. Sinov jadvali", headers: ["A", "B", "C"], rows: [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]] },
         ],
@@ -126,10 +124,10 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
             labels: ["C", "D"], values: [3, 4], data_source: "Official statistical yearbook",
           },
           {
-            type: "flowchart", number: 4, title: "PID rostlagichining boshqaruv algoritmi",
-            caption: "PID rostlagichining boshqaruv algoritmi. Izoh: sxemada o'lchov xatoligiga qarab boshqaruv ta'siri yangilanadi.",
-            nodes: [{ id: "begin", label: "Boshlash", kind: "start" }, { id: "read", label: "Kiritish", kind: "input" }, { id: "work", label: "Jarayon", kind: "process" }, { id: "finish", label: "Yakun", kind: "end" }],
-            edges: [{ from: "begin", to: "read" }, { from: "read", to: "work" }, { from: "work", to: "finish" }],
+            type: "flowchart", number: 4, title: "PID boshqaruv tizimining tarkibi",
+            caption: "PID boshqaruv tizimining tarkibi. Izoh: topshiriq va o'lchov signallari rostlagich, ijro mexanizmi hamda boshqaruv obyekti bilan bog'liq.",
+            nodes: [{ id: "setpoint", label: "Topshiriq signali", kind: "input" }, { id: "sensor", label: "Datchik o'lchovi", kind: "input" }, { id: "controller", label: "PID rostlagich", kind: "process" }, { id: "actuator", label: "Ijro mexanizmi", kind: "output" }, { id: "plant", label: "Boshqaruv obyekti", kind: "process" }],
+            edges: [{ from: "setpoint", to: "controller" }, { from: "sensor", to: "controller" }, { from: "controller", to: "actuator" }, { from: "actuator", to: "plant" }],
           },
         ],
       },
@@ -150,16 +148,57 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
   assert.equal(imageParagraphs.length, 6, "barcha oltita rasm alohida DOCX paragrafida joylashishi kerak");
   assert.ok(imageParagraphs.every(paragraph => /<w:keepNext\b/.test(paragraph)), "har bir rasm ostyozuv paragrafi bilan birga keyingi sahifaga ko'chishi kerak");
   assert.match(documentXml, /1-rasm\. Sinov diagrammasi/);
-  assert.match(documentXml, /2-rasm\. Ichimlik suvini tozalash oqimi/);
+  assert.match(documentXml, /2-rasm\. Ichimlik suvini tozalash tarkibi/);
   assert.match(documentXml, /3-rasm\. Ikkinchi diagramma/);
   assert.match(documentXml, /Manba\/izoh: Official statistical yearbook/, "haqiqiy manba chart ostyozuvida saqlansin");
-  assert.match(documentXml, /4-rasm\. PID rostlagichining boshqaruv algoritmi/);
+  assert.match(documentXml, /4-rasm\. PID boshqaruv tizimining tarkibi/);
   assert.match(documentXml, /\(1-formula\. Sinov formulasi\)/);
   assert.match(documentXml, /\(2-formula\. Ikkinchi formula\)/);
   assert.match(documentXml, /1-jadval\. Sinov jadvali/);
   assert.doesNotMatch(documentXml, /sintetik|synthetic|real o(?:'|&apos;)lchov emas|haqiqiy tajriba o(?:'|&apos;)lchovi emas/i,
     "chart va jadval captionlarida sun'iy ma'lumot statusi ko'rinmasin");
   assert.doesNotMatch(documentXml, /N-(?:rasm|formula|jadval)/i);
+  const referenceStart = documentXml.lastIndexOf("Foydalanilgan adabiyotlar");
+  const referencesXml = documentXml.slice(referenceStart);
+  const referenceNumbers = [...referencesXml.matchAll(/<w:t(?:\s[^>]*)?>(\d+)\.\s/g)].map(match => Number(match[1]));
+  assert.deepEqual(referenceNumbers, Array.from({ length: 12 }, (_, index) => index + 1), "builder bevosita chaqirilganda ham 12 ta manbani 1–12 tartibida chiqaradi");
+  assert.equal((referencesXml.match(/https:\/\/doi\.org\/10\./g) || []).length, 12);
+});
+
+test("DOCX oqim sxemasini sahifa enining/balandligining 60 foizidan kichik qilib, nisbatini saqlaydi", async () => {
+  const oversizedPng = await sharp({
+    create: { width: 2000, height: 1000, channels: 4, background: { r: 230, g: 240, b: 250, alpha: 1 } },
+  }).png().toBuffer();
+  const docx = await buildDocument({
+    meta: { title: "Suvni tozalash", student_name: "", student_group: "", supervisor: "" },
+    chapters: [{
+      id: "ch1", title: "Suvni tozalash tarkibi",
+      content: [{
+        type: "flowchart", number: 1, title: "Suvni tozalash tarkibi", caption: "Izoh: suvni filtrlash va sifat nazorati.",
+        nodes: [
+          { id: "source", label: "Xom suv manbai", kind: "input" },
+          { id: "filter", label: "Filtrlash tizimi", kind: "process" },
+          { id: "quality", label: "Suv sifati", kind: "process" },
+          { id: "treatment", label: "Dezinfeksiya", kind: "process" },
+          { id: "supply", label: "Ichimlik suvi", kind: "output" },
+        ],
+        edges: [{ from: "source", to: "filter" }, { from: "filter", to: "quality" }, { from: "treatment", to: "filter" }, { from: "filter", to: "supply" }],
+      }],
+    }],
+    references: [],
+  }, new Map([["d_1", { buf: oversizedPng, width: 2000, height: 1000 }]]));
+  const archive = await JSZip.loadAsync(docx);
+  const documentXml = await archive.file("word/document.xml").async("string");
+  const drawingParagraph = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) || []).find(paragraph => paragraph.includes("<w:drawing>"));
+  assert.ok(drawingParagraph, "diagram Word paragrafida rasm sifatida joylashadi");
+  const extent = drawingParagraph.match(/<wp:extent cx="(\d+)" cy="(\d+)"/);
+  assert.ok(extent, "DOCX rasmining real EMU o‘lchami mavjud bo‘lsin");
+  const cx = Number(extent[1]);
+  const cy = Number(extent[2]);
+  assert.ok(cx <= 210 * 36_000 * 0.6, "rasm eni sahifa enining 60 foizidan oshmasin");
+  assert.ok(cy <= 297 * 36_000 * 0.6, "rasm bo‘yi sahifa balandligining 60 foizidan oshmasin");
+  assert.ok(Math.abs(cx / cy - 2) < 0.01, "rasm proporsiyasi o‘zgarmasin");
+  assert.ok(Math.abs(cx - 210 * 36_000 * 0.6) < 9_525, "keng tasvir 60 foizlik limitga qisqartirilsin");
 });
 
 test("uzun chart X-o'qi yorliqlari satrlarga o'raladi va to'liq matnni saqlaydi", async () => {

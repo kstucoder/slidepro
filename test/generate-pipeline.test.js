@@ -15,14 +15,14 @@ const {
 } = require("../src/mustaqil/generate");
 
 const references = [
-  "Karimov, A. (2020). O‘zbekiston ta’lim tizimi va rivojlanish asoslari. Fan va texnologiya.",
-  "Ivanov, I. I. (2019). Основы автоматического управления. Наука.",
-  "Smith, J. (2021). The fundamentals of control systems. Academic Press.",
-  "Rahimov, B. (2018). O‘zbek adabiyoti tarixi va nazariyasi. Sharq.",
-  "Petrov, P. P. (2022). Исследование систем управления. Издательство МГУ.",
-  "Brown, R. (2020). Research methods in engineering. Springer.",
-  "Usmonov, D. (2023). O‘quv jarayonini boshqarish va tahlil. Universitet nashriyoti.",
-  "Sidorov, S. S. (2021). Современные методы анализа данных. Научное издательство.",
+  "Karimov, A. (2020). O‘zbekiston ta’lim tizimi va rivojlanish asoslari. Fan va texnologiya. 248 pp. https://doi.org/10.0000/refs.uz.2020.karimov",
+  "Ivanov, I. I. (2019). Основы автоматического управления. Наука. 320 pp. https://doi.org/10.0000/refs.ru.2019.ivanov",
+  "Smith, J. (2021). The fundamentals of control systems. Academic Press. 286 pp. https://doi.org/10.0000/refs.en.2021.smith",
+  "Rahimov, B. (2018). O‘zbek adabiyoti tarixi va nazariyasi. Sharq. 275 pp. https://doi.org/10.0000/refs.uz.2018.rahimov",
+  "Petrov, P. P. (2022). Исследование систем управления. Издательство МГУ. 310 pp. https://doi.org/10.0000/refs.ru.2022.petrov",
+  "Brown, R. (2020). Research methods in engineering. Springer. 296 pp. https://doi.org/10.0000/refs.en.2020.brown",
+  "Usmonov, D. (2023). O‘quv jarayonini boshqarish va tahlil. Universitet nashriyoti. 264 pp. https://doi.org/10.0000/refs.uz.2023.usmonov",
+  "Sidorov, S. S. (2021). Современные методы анализа данных. Научное издательство. 302 pp. https://doi.org/10.0000/refs.ru.2021.sidorov",
 ];
 const incompleteReferences = [
   "Taylor, A. (2020). The control systems study 1. Test Press.",
@@ -55,9 +55,9 @@ function fakeOutline(outlineReferences = incompleteReferences) {
         chart_count: 1, chart_type: "line", chart_plans: [{ title: "Vaqt bo'yicha javob", variable: "vaqt bo'yicha chiqish qiymati" }],
       },
       {
-        id: "ch3", title: "Ishlash jarayoni", role: "methodology",
-        sections: [{ title: "Qarorlar ketma-ketligi" }, { title: "Natijani baholash" }],
-        flowchart_count: 1, flowchart_plans: [{ title: "Boshqaruv oqimi", purpose: "o'lchash va qaror qabul qilish ketma-ketligi" }],
+        id: "ch3", title: "Avtomatik boshqaruv tizimi tarkibi", role: "methodology",
+        sections: [{ title: "Datchik va rostlagich aloqasi" }, { title: "Ijro mexanizmi va obyekt" }],
+        flowchart_count: 1, flowchart_plans: [{ title: "Boshqaruv tizimining tarkibi", purpose: "avtomatik boshqaruvda datchik o'lchovi, rostlagich, ijro mexanizmi va boshqaruv obyekti aloqasi" }],
       },
       { id: "ch4", title: "Tizim samaradorligi", role: "analysis", sections: [{ title: "Samaradorlik tahlili" }] },
       { id: "conclusion", title: "Xulosa", role: "conclusion" },
@@ -101,18 +101,17 @@ function mediaResponse(userPrompt, attempts) {
     return { slot_id: slotId, type: "chart", chartType, title: "Ko'rsatkichlar", labels: ["A", "B", "C"], values: [12, 19, 15], unit: "birlik", data_source: "Sintetik illustrativ ma'lumot; real o'lchov emas", caption: "Namunaviy solishtirish" };
   }
   if (slotId.endsWith(":flowchart:1")) return {
-    slot_id: slotId, type: "flowchart", title: "Boshqaruv oqimi",
+    slot_id: slotId, type: "flowchart", title: "Avtomatik boshqaruv tizimining tarkibi",
     nodes: [
-      { id: "start", label: "Boshlash", kind: "start" },
-      { id: "measure", label: "Qiymatni o'lchash", kind: "input" },
-      { id: "process", label: "Natijani hisoblash", kind: "process" },
-      { id: "check", label: "Mezon bajarildimi?", kind: "decision" },
-      { id: "finish", label: "Yakunlash", kind: "end" },
+      { id: "sensor", label: "Datchik o'lchovi", kind: "input" },
+      { id: "controller", label: "Rostlagich modeli", kind: "process" },
+      { id: "signal", label: "Boshqaruv signali", kind: "output" },
+      { id: "actuator", label: "Ijro mexanizmi", kind: "process" },
+      { id: "plant", label: "Boshqaruv obyekti", kind: "process" },
     ],
     edges: [
-      { from: "start", to: "measure" }, { from: "measure", to: "process" },
-      { from: "process", to: "check" }, { from: "check", to: "finish", label: "Ha" },
-      { from: "check", to: "measure", label: "Yo'q" },
+      { from: "sensor", to: "controller" }, { from: "controller", to: "signal" },
+      { from: "signal", to: "actuator" }, { from: "actuator", to: "plant" },
     ],
   };
   throw new Error(`Kutilmagan slot: ${slotId}`);
@@ -176,13 +175,16 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
     const bibliographyStart = documentXml.lastIndexOf("Foydalanilgan adabiyotlar");
     assert.notEqual(bibliographyStart, -1, "bibliografiya bo'limi DOCX ichida mavjud");
     const bibliographyXml = documentXml.slice(bibliographyStart);
-    assert.equal((bibliographyXml.match(/<w:p(?:\s|>)/g) || []).length, 12, "yakuniy bibliografiya aynan 12 ta yozuvdan iborat");
+    const bibliographyNumbers = [...bibliographyXml.matchAll(/<w:t(?:\s[^>]*)?>(\d+)\.\s/g)].map(match => Number(match[1]));
+    assert.deepEqual(bibliographyNumbers, Array.from({ length: 12 }, (_, index) => index + 1), "DOCX adabiyotlar sahifasida aynan 12 ta manba 1–12 tartibda raqamlanadi");
+    assert.equal((bibliographyXml.match(/https:\/\/doi\.org\/10\./g) || []).length, 12, "har bir adabiyot yozuvida DOI havolasi bo‘ladi");
+    assert.match(bibliographyXml, /\d+ pp\./, "kitob yozuvlarida umumiy sahifa soni ko‘rsatiladi");
     assert.doesNotMatch(bibliographyXml, /AI-generated|verify before citation|synthetic|fallback/i, "yakuniy bibliografiyada sintetik yoki fallback belgisi bo'lmaydi");
     assert.ok(bibliographyXml.indexOf("Brown, R.") < bibliographyXml.indexOf("Ivanov, I. I."), "APA manbalari muallif bo'yicha saralanadi");
     assert.match(bibliographyXml, /O‘zbekiston ta’lim tizimi/);
     assert.match(bibliographyXml, /Основы автоматического управления/);
     assert.match(bibliographyXml, /fundamentals of control systems/i, "yakuniy ro'yxatda ingliz tilidagi asl manba ham bor");
-    assert.doesNotMatch(bibliographyXml, /<w:numPr>/, "APA adabiyotlar yozuvlari raqamlanmaydi");
+    assert.doesNotMatch(bibliographyXml, /<w:numPr>/, "ko‘rinadigan raqamlar DOCX matnining o‘zida tartibli va barqaror bo‘ladi");
     assert.match(bibliographyXml, /<w:i\s*\/>/, "kitob nomi yoki jurnal nomi APA bo'yicha kursiv qilinadi");
     assert.equal(maxRequests, 3, "barcha parallel LLM so'rovlari concurrency=3 chegarasida qoladi");
     assert.equal(requests.filter(prompt => prompt.includes("Akademik mustaqil ish uchun tuzilma")).length, 1, "bibliografiya sifati outline generatsiyasini qayta boshlatmaydi");

@@ -1,6 +1,7 @@
-const FLOWCHART_KINDS = new Set(["start", "end", "process", "decision", "input", "output"]);
-const FLOWCHART_MIN_NODES = 4;
-const FLOWCHART_MAX_NODES = 12;
+const FLOWCHART_KINDS = new Set(["process", "input", "output"]);
+const FLOWCHART_MIN_NODES = 5;
+const FLOWCHART_MAX_NODES = 5;
+const FLOWCHART_MAX_LABEL_WORDS = 5;
 const ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
 const UZBEK_TRANSLATIONS = [
   ["transfer funksiyani", "uzatish funksiyasini"],
@@ -162,13 +163,13 @@ function providedCaptionTranslation(caption, english) {
 
 function buildFlowchartCaption(flowchart, purpose = "", language = "o'zbek") {
   const title = String(flowchart?.title || "Oqim sxemasi").trim();
-  const description = String(purpose || "jarayon bosqichlari va qarorlar ketma-ketligini ko'rsatadi").trim();
+  const description = String(purpose || "mavzuga oid besh tushuncha va ularning aloqalarini ko'rsatadi").trim();
   if (isUzbek(language)) {
     let conciseDescription = localizeUzbekText(description, language)
       .replace(/\s+/g, " ")
       .replace(/[.!?]+$/g, "");
     if (conciseDescription.split(/\s+/).filter(Boolean).length < 5) {
-      conciseDescription = `${conciseDescription} va asosiy jarayon bosqichlarini ko'rsatadi`;
+      conciseDescription = `${conciseDescription} va asosiy tushunchalar o'rtasidagi aloqalarni ko'rsatadi`;
     }
     if (conciseDescription.length > 220) {
       conciseDescription = `${conciseDescription.slice(0, 217).replace(/\s+\S*$/, "")}…`;
@@ -206,12 +207,12 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language } = 
   if (!flowchart || typeof flowchart !== "object" || Array.isArray(flowchart)) {
     throw new Error("flowchart: ma'lumot obyekt bo'lishi kerak");
   }
-  const title = textField(flowchart.title, "title", 180);
+  const title = textField(flowchart.title, "title", 120);
   if (!Array.isArray(flowchart.nodes) || flowchart.nodes.length < FLOWCHART_MIN_NODES || flowchart.nodes.length > FLOWCHART_MAX_NODES) {
-    throw new Error(`flowchart: nodes ${FLOWCHART_MIN_NODES}–${FLOWCHART_MAX_NODES} ta bo'lishi kerak`);
+    throw new Error(`flowchart: aynan ${FLOWCHART_MIN_NODES} ta node bo'lishi kerak`);
   }
-  if (!Array.isArray(flowchart.edges) || flowchart.edges.length < 1 || flowchart.edges.length > 28) {
-    throw new Error("flowchart: edges 1–28 ta bo'lishi kerak");
+  if (!Array.isArray(flowchart.edges) || flowchart.edges.length < 4 || flowchart.edges.length > 6) {
+    throw new Error("flowchart: edges 4–6 ta bo'lishi kerak");
   }
 
   const ids = new Set();
@@ -223,12 +224,17 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language } = 
     if (!ID_PATTERN.test(id)) throw new Error(`flowchart: node ${index + 1} id xavfsiz formatda emas`);
     if (ids.has(id)) throw new Error(`flowchart: takrorlangan node id (${id})`);
     ids.add(id);
-    const label = textField(node.label, `node ${index + 1} label`, 140);
+    const label = textField(node.label, `node ${index + 1} label`, 64);
+    const labelWordCount = label.match(/[\p{L}\p{N}]+(?:[’'ʻ-][\p{L}\p{N}]+)*/gu)?.length || 0;
+    if (labelWordCount < 1 || labelWordCount > FLOWCHART_MAX_LABEL_WORDS) {
+      throw new Error(`flowchart: node ${index + 1} label 1–${FLOWCHART_MAX_LABEL_WORDS} ta qisqa so'zdan iborat bo'lishi kerak`);
+    }
     const kind = String(node.kind || "process").trim().toLowerCase();
     if (!FLOWCHART_KINDS.has(kind)) throw new Error(`flowchart: noma'lum node turi (${kind || "bo'sh"})`);
     return { id, label, kind };
   });
 
+  const edgePairs = new Set();
   const edges = flowchart.edges.map((edge, index) => {
     if (!edge || typeof edge !== "object" || Array.isArray(edge)) {
       throw new Error(`flowchart: edge ${index + 1} obyekt bo'lishi kerak`);
@@ -236,13 +242,34 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language } = 
     const from = textField(edge.from, `edge ${index + 1} from`, 32);
     const to = textField(edge.to, `edge ${index + 1} to`, 32);
     if (!ids.has(from) || !ids.has(to)) throw new Error(`flowchart: edge ${index + 1} mavjud bo'lmagan nodega ulanadi`);
-    const label = textField(edge.label == null ? "" : edge.label, `edge ${index + 1} label`, 64, false);
+    if (from === to) throw new Error(`flowchart: edge ${index + 1} node o'ziga ulanmasin`);
+    const pair = `${from}\u0000${to}`;
+    if (edgePairs.has(pair)) throw new Error(`flowchart: takrorlangan aloqa (${from} → ${to})`);
+    edgePairs.add(pair);
+    const label = textField(edge.label == null ? "" : edge.label, `edge ${index + 1} label`, 32, false);
     return { from, to, label };
   });
 
+  const outgoing = new Map([...ids].map(id => [id, []]));
+  edges.forEach(edge => outgoing.get(edge.from).push(edge.to));
+  const visited = new Set();
+  const visiting = new Set();
+  const hasCycle = id => {
+    if (visiting.has(id)) return true;
+    if (visited.has(id)) return false;
+    visiting.add(id);
+    for (const next of outgoing.get(id)) {
+      if (hasCycle(next)) return true;
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return false;
+  };
+  if ([...ids].some(hasCycle)) throw new Error("flowchart: sikl yasamasin; oddiy, siklsiz aloqalardan foydalaning");
+
   const totalTextLength = title.length + nodes.reduce((sum, node) => sum + node.label.length, 0)
     + edges.reduce((sum, edge) => sum + edge.label.length, 0);
-  if (totalTextLength > 2400) throw new Error("flowchart: umumiy matn 2400 belgidan oshmasin");
+  if (totalTextLength > 800) throw new Error("flowchart: umumiy matn 800 belgidan oshmasin");
 
   return { title, nodes, edges };
 }

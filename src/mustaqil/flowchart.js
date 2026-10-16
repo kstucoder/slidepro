@@ -18,8 +18,7 @@ function escapeDotText(value) {
 function buildFlowchartDot(input) {
   const flowchart = normalizeFlowchartData(input);
   const template = getFlowchartTemplate(input?.template_id);
-  const rootId = flowchart.nodes.find(node => node.kind === "start")?.id || flowchart.nodes[0].id;
-  const graphAttrs = template.graphAttrs.map(attribute => attribute.replaceAll("__FLOWCHART_ROOT__", rootId));
+  const graphAttrs = template.graphAttrs;
   const lines = [
     "digraph Flowchart {",
     `  graph [${[...graphAttrs, 'bgcolor="white"', 'pad="0.18"', 'fontname="DejaVu Sans"', 'labelloc="t"', `label="${escapeDotText(flowchart.title)}"`, 'fontsize=18', 'fontcolor="#18324B"'].join(", ")}];`,
@@ -33,30 +32,19 @@ function buildFlowchartDot(input) {
     return `    ${node.id} [label="${label}", ${options}];`;
   };
 
-  const clusteredNodes = new Set();
-  for (const cluster of template.clusters || []) {
-    const members = flowchart.nodes.filter(node => cluster.kinds.includes(node.kind));
-    if (!members.length) continue;
-    lines.push(`  subgraph cluster_${cluster.id} {`);
-    lines.push(`    label="${escapeDotText(cluster.label)}"; graph [${cluster.attrs}];`);
-    for (const node of members) {
-      lines.push(nodeLine(node));
-      clusteredNodes.add(node.id);
+  flowchart.nodes.forEach(node => lines.push(nodeLine(node)));
+  const rows = [flowchart.nodes.slice(0, 3), flowchart.nodes.slice(3, 5)];
+  for (const row of rows) {
+    lines.push(`  { rank=same; ${row.map(node => node.id).join("; ")}; }`);
+    for (let index = 0; index < row.length - 1; index++) {
+      lines.push(`  ${row[index].id} -> ${row[index + 1].id} [style=invis, weight=100, arrowhead=none];`);
     }
-    lines.push("  }");
   }
-  for (const node of flowchart.nodes) {
-    if (!clusteredNodes.has(node.id)) lines.push(nodeLine(node));
-  }
+  lines.push(`  ${rows[0][2].id} -> ${rows[1][0].id} [style=invis, weight=100, arrowhead=none];`);
 
-  const nodePositions = new Map(flowchart.nodes.map((node, index) => [node.id, index]));
   for (const edge of flowchart.edges) {
-    const isNegative = /^(yo'q|yo‘q|yo'q|no|false)$/i.test(edge.label);
     const edgeAttributes = [];
     if (edge.label) edgeAttributes.push(`label="${escapeDotText(edge.label)}"`);
-    if (isNegative) edgeAttributes.push('color="#D9776A"', 'fontcolor="#D9776A"');
-    if (["circular_feedback", "state_machine"].includes(template.id)
-      && nodePositions.get(edge.to) <= nodePositions.get(edge.from)) edgeAttributes.push('style="dashed"');
     const attributes = edgeAttributes.length ? ` [${edgeAttributes.join(", ")}]` : "";
     lines.push(`  ${edge.from} -> ${edge.to}${attributes};`);
   }

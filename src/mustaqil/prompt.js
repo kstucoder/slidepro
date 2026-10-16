@@ -96,13 +96,13 @@ function defaultFlowchartPlan(topic, ordinal, language = "o'zbek") {
   let plan;
   if (ordinal === 0) {
     plan = {
-      title: `${subject}: asosiy jarayon bosqichlari`,
-      purpose: `${subject} mavzusidagi jarayonning boshlanishi, muhim amallari, qaror nuqtalari va natijasini ko'rsatish`,
+      title: `${subject}: besh asosiy tarkibiy unsur`,
+      purpose: `${subject} mavzusidagi besh asosiy tushuncha va ularning o'zaro bog'lanishini ixcham ko'rsatish`,
     };
   } else {
     plan = {
-      title: `${subject}: tahlil va qarorlar ketma-ketligi`,
-      purpose: `${subject} bo'yicha ma'lumot yoki holatni baholash, tegishli qarorni tanlash va kutiladigan natijaga kelish bosqichlarini ko'rsatish`,
+      title: `${subject}: omillar va natijalar bog'lanishi`,
+      purpose: `${subject} bo'yicha asosiy omillar, tarkibiy qismlar va natijalar orasidagi sodda aloqalarni ko'rsatish`,
     };
   }
   plan.caption = buildFlowchartCaption(plan, plan.purpose, language);
@@ -114,7 +114,7 @@ function flowchartChapterPriority(chapter, ordinal, index) {
   const text = [chapter.title || "", chapter.role || "", ...sectionTitles].join(" ").toLocaleLowerCase();
   const patterns = ordinal === 0
     ? [/tarkib|tuzil|struktur|arxitekt|model|asos|prinsip|blok/]
-    : [/ishlash|algorit|boshqar|rostla|amaliy|jarayon|qo'llan|qo‘llan|metod|loyih/];
+    : [/ishlash|boshqar|rostla|amaliy|jarayon|tarkib|aloqa|omil|qo'llan|qo‘llan|metod|loyih/];
   return (patterns.some(pattern => pattern.test(text)) ? 10 : 0) - index / 100;
 }
 
@@ -621,7 +621,7 @@ function chapterUserPrompt(options) {
 
   const flowchartPlan = Array.isArray(chapter.flowchart_plans) ? chapter.flowchart_plans[0] : null;
   const flowchartGuide = chapter.flowchart_count > 0
-    ? `\nGraphviz oqim sxemasi rejasi: "${flowchartPlan?.title || chapter.title}" — ${flowchartPlan?.purpose || "mavzudagi jarayon yoki qarorlar ketma-ketligi"}. Reja captioni: ${flowchartPlan?.caption || ""}.\nFaqat mazmuniy, mavzuga mos 4–12 tugunli oqim sxemasi ber; taxminiy statistik raqam kiritma. Graphviz title, node va edge label matnini model qaytargandek aynan saqla; inglizcha yoki o'zbekcha atamalar chizmada qolishi mumkin va til sababli sxemani rad etma. Tugun kind qiymatlari faqat start, end, process, decision, input, output bo'lsin. O'zbekcha ishda captionni o'zbekcha yozib, "Izoh:" bilan sxema nimani ko'rsatishini 1–2 qisqa jumlada tushuntir; label so'zlari uchun alohida tarjima yoki glossariy shart emas. Captionni ixcham saqla. JSONdan tashqari DOT/kod qaytarma.`
+    ? `\nGraphviz sodda sxemasi rejasi: "${flowchartPlan?.title || chapter.title}" — ${flowchartPlan?.purpose || "mavzudagi asosiy tushunchalar, omillar va aloqalar"}. Reja captioni: ${flowchartPlan?.caption || ""}.\nAynan 5 ta qisqa label-tugunli, mavzuga xos, ixcham chizma ber; besh label, har bir aloqa va izoh mavzu, bob va reja maqsadiga bevosita mos bo‘lsin; generic to‘ldiruvchi yorliqlarni ishlatma. Bu algoritm emas: start/end, qaror shoxlari, ha/yo'q shartlari, takroriy sikl yoki uzun yuqoridan-pastga ketma-ketlik yasama. 2 qatorga 3+2 shaklda joylashtiriladi; mazmunan mos 4–6 sodda aloqa yetarli. Qisqa nomlar va asosiy tushunchalar, qismlar, omillar yoki natijalardan foydalan; taxminiy statistik raqam kiritma. Title, node va edge matnini mavzuga mos inglizcha yoki o'zbekcha berishing mumkin; Barcha tugunlar mazmuniy tushunchalar; kind bo‘yicha processni standartla, input/outputni faqat mavzuda haqiqiy kirish yoki chiqish bo‘lsa tanla; bu faqat mos shaklni tanlashga xizmat qilsin. O'zbekcha ishda captionni o'zbekcha yozib, "Izoh:" bilan chizmadagi bog'lanishlarni 1–2 qisqa jumlada tushuntir; har bir label uchun alohida tarjima yoki glossariy shart emas. JSONdan tashqari DOT/kod qaytarma.`
     : "";
 
   // Chapter type instructions
@@ -731,10 +731,11 @@ CONTENT BLOKLARI:
    - Haqiqiy manba yoki o'lchov bo'lishi shart emas: mavzuga mos, iloji boricha realistik qiymat va tafsilotlar tuz; raqamlar diapazoni, birliklari va qatorlar orasidagi munosabatlar mantiqan izchil bo'lsin.
    - Manba aniq berilmagan bo'lsa, manba nomini uydirma qilma; sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini yozma.
 
-6. Graphviz oqim sxemasi (flowchart_count > 0):
-   {"type":"flowchart","title":"<rejadagi sarlavha>","caption":"Izoh: <sxema nimani ko'rsatishining qisqa o'zbekcha tavsifi>.","nodes":[{"id":"start","label":"<tugun matni inglizcha yoki o'zbekcha>","kind":"start"},{"id":"step1","label":"<jarayon bosqichi>","kind":"process"},{"id":"check","label":"<qaror savoli>","kind":"decision"},{"id":"finish","label":"<yakun>","kind":"end"}],"edges":[{"from":"start","to":"step1","label":""},{"from":"step1","to":"check","label":""},{"from":"check","to":"finish","label":"Ha"}]}
-   - Bitta rejali flowchartni aynan bir marta, asosiy bo'limda qaytar; tugun id'lari lotin harfi bilan boshlansin.
-   - Har bir tugun yorlig'i qisqa bo'lsin; model inglizcha so'z yoki atama qaytarsa, Graphviz ichida aynan o'sha matn qolsin. O'zbekcha captionda butun sxemaga qisqa o'zbekcha izoh bo'lsin; har bir atamaning tarjimasi talab qilinmaydi. Qaror tugunlaridan chiqadigan qirralarga "Ha/Yo'q" yoki "Yes/No" kabi yorliq berilishi mumkin.
+6. Graphviz sodda sxemasi (flowchart_count > 0):
+   {"type":"flowchart","title":"<rejadagi mavzuga xos sarlavha>","caption":"Izoh: <besh unsur va aloqalarining qisqa tavsifi>.","nodes":[{"id":"item1","label":"<asosiy tushuncha>","kind":"process"},{"id":"item2","label":"<tarkibiy qism>","kind":"process"},{"id":"item3","label":"<omil yoki vazifa>","kind":"process"},{"id":"item4","label":"<qo‘llanish yoki xususiyat>","kind":"process"},{"id":"item5","label":"<natija yoki ta’sir>","kind":"process"}],"edges":[{"from":"item1","to":"item2","label":""},{"from":"item2","to":"item3","label":""},{"from":"item4","to":"item2","label":""},{"from":"item2","to":"item5","label":""}]}
+   - Aynan 5 ta tugun bo'lsin; har bir label 1–5 so'zdan, mavzuga aniq mos va qisqa bo'lsin. Ular 2 qatorda 3+2 joylashadi; 4–6 ta aloqa chiziqlari yetarli.
+   - Bu sxema algoritm emas: start/end/decision tugunlari, shoxlangan ha/yo‘q qarorlari, sikl, ko‘p qavatli zanjir yoki uzun vertikal ketma-ketlik ishlatma. Tushuncha, tarkibiy qism, omil, xususiyat va natijalar orasidagi mavzuga xos aloqalarni ko‘rsat.
+   - Bitta rejali sxemani aynan bir marta, asosiy bo'limda qaytar; tugun id'lari lotin harfi bilan boshlansin. Model inglizcha so'z yoki atama qaytarsa, Graphviz ichida aynan o'sha matn qolsin. O'zbekcha captionda butun sxemaga qisqa o'zbekcha izoh bo'lsin; har bir atamaning tarjimasi talab qilinmaydi.
    - Diagrammadan oldin va keyin 1-2 jumla izoh ber; Graphviz DOT manbasini hech qachon JSON ichida yozma.
 
 SIFAT QOIDALARI:

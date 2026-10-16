@@ -85,7 +85,7 @@ function mediaSlotPrompt(slot, { topic, language, sourceContent, chapter }) {
   const schemas = {
     formula: `Aynan rejalashtirilgan LaTeX formulani qaytar, yangi formula to'qima. JSON: {"slot_id":"${slot.slot_id}","type":"formula","latex":"...","display_text":"...","caption":"..."}`,
     chart: `Faqat grafik ma'lumotini qaytar. chartType=${slot.chartType}. 2–8 qisqa label va ularga mos finite sonli values; pie uchun ko'pi bilan 5 label va manfiy bo'lmagan qiymatlar. Qiymatlar haqiqiy o'lchov yoki manbadan olingan bo'lishi shart emas: mavzu, reja va kontekstga mos, iloji boricha real hayotda uchrashi mumkin bo'lgan diapazon, birlik va naqshlarni tanlab, ishonarli hamda o'zaro izchil qiymatlar tuz. Taqqoslash yoki vaqt tendensiyasi mazmunan mantiqli bo'lsin. Haqiqiy manba promptda berilmagan bo'lsa, manba nomini uydirma qilma va data_source maydonini bo'sh qoldir; faqat berilgan manbada tegishli ma'lumot aniq ko'rsatilgan bo'lsa, uning nomini yoz. Sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma. JSON: {"slot_id":"${slot.slot_id}","type":"chart","chartType":"${slot.chartType}","title":"...","labels":["..."],"values":[1,2],"unit":"","data_source":"","caption":"..."}`,
-    flowchart: `Faqat Graphviz uchun JSON strukturani qaytar; DOT yoki kod qaytarma. Tanlangan va o‘zgarmas shablon: ${flowchartTemplate.id} — ${flowchartTemplate.name}. Shablon vazifasi: ${flowchartTemplate.description} Tuzilish bo‘yicha ko‘rsatma: ${flowchartTemplate.guidance} Bu hujjatdagi mavzu, bob, reja maqsadi va kontekstga xos aniq jarayon ma’lumotlarini tuz; generic, mavzudan uzilgan bosqichlar bermagin. Shablonning tuzilishiga mos node/edge mazmuni va mantiqiy yo‘nalishni ishlab chiq, ammo JSONga template ID yoki DOT kod qo‘shma — tanlangan ko‘rinishni renderer o‘zi qo‘llaydi. 4–12 node, id lotin harfidan boshlanadigan xavfsiz id, kind faqat start/end/process/decision/input/output; barcha edge mavjud node'larni ulang. Title, node va edge matnini mavzuga mos, tushunarli inglizcha yoki o'zbekcha berishing mumkin; til yoki lug'at talabi sababli sxemani to'xtatma. O'zbekcha ishda captionni o'zbekcha yozib, "Izoh:" bilan aynan shu mavzudagi sxema nimani ko'rsatishini 1–2 qisqa jumlada tushuntir; har bir label uchun tarjima/glossariy shart emas. JSON: {"slot_id":"${slot.slot_id}","type":"flowchart","title":"...","caption":"Izoh: sxemada mavzuga tegishli jarayon va qarorlar ko‘rsatiladi.","nodes":[{"id":"start","label":"...","kind":"start"},{"id":"step","label":"...","kind":"process"},{"id":"decision","label":"...","kind":"decision"},{"id":"finish","label":"...","kind":"end"}],"edges":[{"from":"start","to":"step","label":""},{"from":"step","to":"decision","label":""},{"from":"decision","to":"finish","label":"Ha"}]}`,
+    flowchart: `Faqat Graphviz uchun JSON strukturani qaytar; DOT yoki kod qaytarma. Tanlangan va o‘zgarmas shablon: ${flowchartTemplate.id} — ${flowchartTemplate.name}. Shablon vazifasi: ${flowchartTemplate.description} Tuzilish bo‘yicha ko‘rsatma: ${flowchartTemplate.guidance} Bu hujjatdagi mavzu, bob, reja maqsadi va kontekstga mos, aniq beshta asosiy unsur tanla; har bir tugun, aloqa va caption mavzu, bob va reja maqsadiga bevosita mos bo‘lsin, generic to‘ldiruvchi yorliqlar ishlatma; algoritm yoki mavzudan uzilgan bosqichlar bermagin. Aynan 5 node, 2 qatorda 3+2 ko‘rinishda joylashadi; 4–6 sodda aloqadan foydalan. Bu algoritm emas: start/end/decision tugunlari, ha/yo‘q shoxlari, sikl yoki uzun vertikal ketma-ketlik yasama. Kind faqat process/input/output: processni odatiy tanlov qil, input/outputni esa mavzuda haqiqatan kirish yoki chiqish unsur bo‘lsa ishlat; bu shunchaki mos shaklni tanlaydi. Har bir label 1–5 so‘z va qisqa bo‘lsin. ID lotin harfidan boshlanadigan xavfsiz bo‘lsin, barcha edge mavjud node'larni ulasin. Title, node va edge matnini mavzuga mos, tushunarli inglizcha yoki o'zbekcha berishing mumkin. O'zbekcha ishda captionni o'zbekcha yozib, "Izoh:" bilan besh unsur orasidagi mazmuniy aloqani 1–2 qisqa jumlada tushuntir; har bir label uchun tarjima/glossariy shart emas. JSON: {"slot_id":"${slot.slot_id}","type":"flowchart","title":"...","caption":"Izoh: besh asosiy unsur va ularning aloqalari.","nodes":[{"id":"item1","label":"...","kind":"process"},{"id":"item2","label":"...","kind":"process"},{"id":"item3","label":"...","kind":"process"},{"id":"item4","label":"...","kind":"process"},{"id":"item5","label":"...","kind":"process"}],"edges":[{"from":"item1","to":"item2","label":""},{"from":"item2","to":"item3","label":""},{"from":"item4","to":"item2","label":""},{"from":"item2","to":"item5","label":""}]}`,
     table: `Faqat bitta jadval ma'lumotini qaytar; kamida 3 ustun va 3–6 qator, barcha qatorlarda ustunlar soni teng bo'lsin. Haqiqiy manba yoki o'lchov bo'lishi shart emas: jadvalni mavzuga mos, iloji boricha realistik tafsilotlar va (kerak bo'lsa) ishonarli raqamlar bilan to'ldir. Raqamli qiymatlarning diapazoni, birliklari, aniqlik darajasi va qatorlar orasidagi munosabatlar o'zaro mantiqan izchil bo'lsin. Manba promptda aniq berilmagan bo'lsa, manba nomi yoki havolasini uydirma qilma. Sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma; jadval mazmunini tabiiy ifodala. JSON: {"slot_id":"${slot.slot_id}","type":"table","title":"...","caption":"...","headers":["A","B","C"],"rows":[["...","...","..."],["...","...","..."],["...","...","..."]]}`,
   };
   return `${common}\n${schemas[slot.type] || "Noma'lum media turi."}`;
@@ -230,37 +230,67 @@ function defaultChartLabels() {
   return ["1-bosqich", "2-bosqich", "3-bosqich", "4-bosqich", "5-bosqich"];
 }
 
+function fallbackFlowchartLabels(plan, chapter) {
+  const stopWords = new Set(["va", "yoki", "uchun", "bo'yicha", "bo‘yicha", "bilan", "ning", "dan", "asosiy", "tarkibiy", "unsur", "element", "jarayon", "bosqich", "bosqichlari", "ketma-ketligi", "aloqa", "aloqalar", "o'zaro", "sodda", "ixcham", "ko'rsatish", "ko'rsatadi"]);
+  const chunks = [plan?.title, plan?.purpose, chapter?.title]
+    .filter(value => typeof value === "string" && value.trim())
+    .flatMap(value => value.split(/[:;,.!?—–]+/u));
+  const candidates = [];
+  const seen = new Set();
+  const add = phrase => {
+    const label = phrase.replace(/\s+/g, " ").trim();
+    const key = label.toLocaleLowerCase();
+    if (label && label.length <= 64 && !seen.has(key)) {
+      seen.add(key);
+      candidates.push(label);
+    }
+  };
+  const tokenGroups = chunks.map(chunk => (chunk.match(/[\p{L}\p{N}][\p{L}\p{N}'’_-]*/gu) || [])
+    .filter(token => token.length > 2 && !stopWords.has(token.toLocaleLowerCase())));
+  for (const tokens of tokenGroups) {
+    if (tokens.length >= 2 && tokens.length <= 4) add(tokens.join(" "));
+    for (const width of [3, 2]) {
+      for (let start = 0; start + width <= tokens.length; start++) add(tokens.slice(start, start + width).join(" "));
+    }
+  }
+  const allTokens = [...new Set(tokenGroups.flat().map(token => token.toLocaleLowerCase()))];
+  for (let start = 0; start + 1 < allTokens.length && candidates.length < 12; start++) {
+    add(allTokens.slice(start, Math.min(start + 3, allTokens.length)).join(" "));
+  }
+  const subjectTerm = allTokens[0] || String(chapter?.title || plan?.title || "Mavzu").split(/\s+/)[0];
+  const contextualDescriptors = ["tarkibi", "asosiy xususiyati", "amaliy qo'llanishi", "ta'siri", "kutiladigan natijasi"];
+  for (const descriptor of contextualDescriptors) {
+    if (candidates.length >= 5) break;
+    add(`${subjectTerm} ${descriptor}`);
+  }
+  return candidates.slice(0, 5);
+}
+
 function fallbackFlowchart(plan, chapter, language, index) {
-  const title = cleanMediaText(plan?.title || `${chapter?.title || "Mavzu"}: jarayon bosqichlari${index ? ` (${index + 1})` : ""}`, `${chapter?.title || "Mavzu"}: jarayon bosqichlari`).slice(0, 180);
+  const subject = chapter?.title || plan?.title || "Mavzu";
+  const title = cleanMediaText(plan?.title || `${subject}: asosiy tushunchalar va aloqalar${index ? ` (${index + 1})` : ""}`, `${subject}: asosiy tushunchalar va aloqalar`).slice(0, 120);
   const defaultPurpose = isUzbek(language)
-    ? `${chapter?.title || title} bo'yicha asosiy jarayon va qarorlar ketma-ketligi`
+    ? `${subject} mavzusidagi asosiy tushunchalar va ularning mazmuniy aloqalari`
     : isRussian(language)
-      ? `Основные этапы процесса и последовательность решений по теме «${chapter?.title || title}»`
-      : `Main process stages and decision sequence for ${chapter?.title || title}`;
-  const labels = isUzbek(language)
-    ? ["Boshlash", "Ma'lumotni qabul qilish", "Asosiy amalni bajarish", "Natija mezonga mosmi?", "Keyingi amalni bajarish", "Yakunlash"]
-    : isRussian(language)
-      ? ["Начало", "Получить данные", "Выполнить действие", "Критерий выполнен?", "Выполнить следующий шаг", "Завершение"]
-      : ["Start", "Receive input", "Perform main step", "Does the result meet criteria?", "Perform next step", "Finish"];
+      ? `Основные понятия и содержательные связи по теме «${subject}»`
+      : `Key concepts and topic-specific relationships for ${subject}`;
+  const labels = fallbackFlowchartLabels(plan, chapter);
   const flowchart = {
     type: "flowchart",
-    template_id: plan?.template_id || "classic_vertical",
+    template_id: plan?.template_id || "classic_grid",
     title,
     nodes: [
-      { id: "start", label: labels[0], kind: "start" },
-      { id: "input", label: labels[1], kind: "input" },
-      { id: "process", label: labels[2], kind: "process" },
-      { id: "check", label: labels[3], kind: "decision" },
-      { id: "next", label: labels[4], kind: "process" },
-      { id: "finish", label: labels[5], kind: "end" },
+      { id: "item1", label: labels[0], kind: "process" },
+      { id: "item2", label: labels[1], kind: "process" },
+      { id: "item3", label: labels[2], kind: "process" },
+      { id: "item4", label: labels[3], kind: "process" },
+      { id: "item5", label: labels[4], kind: "process" },
     ],
     edges: [
-      { from: "start", to: "input", label: "" },
-      { from: "input", to: "process", label: "" },
-      { from: "process", to: "check", label: "" },
-      { from: "check", to: "finish", label: isUzbek(language) ? "Ha" : isRussian(language) ? "Да" : "Yes" },
-      { from: "check", to: "next", label: isUzbek(language) ? "Yo'q" : isRussian(language) ? "Нет" : "No" },
-      { from: "next", to: "process", label: "" },
+      { from: "item1", to: "item2", label: "" },
+      { from: "item2", to: "item3", label: "" },
+      { from: "item4", to: "item2", label: "" },
+      { from: "item2", to: "item5", label: "" },
     ],
   };
   flowchart.caption = cleanMediaText(buildFlowchartCaption(flowchart, plan?.purpose || defaultPurpose, language), title);
@@ -376,7 +406,7 @@ function alignPlannedFlowchartBlocks(chapter, content, language = "o'zbek") {
       flowchart = fallbackFlowchart(plan, chapter, language, index);
     }
     flowchart.title = cleanMediaText(flowchart.title || plan.title || "Oqim sxemasi", "Oqim sxemasi").slice(0, 180);
-    flowchart.template_id = flowchart.template_id || plan.template_id || "classic_vertical";
+    flowchart.template_id = flowchart.template_id || plan.template_id || "classic_grid";
     // Yorliq tili Graphviz renderiga ta'sir qilmaydi; captionda qisqa o'zbekcha izoh qoladi.
     flowchart.caption = cleanMediaText(buildFlowchartCaption(flowchart, plan.purpose, language), flowchart.title);
     return flowchart;
@@ -428,7 +458,7 @@ function normalizeMediaSlotResult(slot, response, { chapter, language }) {
     return {
       type: "flowchart",
       ...normalized,
-      template_id: slot.template_id || plan.template_id || "classic_vertical",
+      template_id: slot.template_id || plan.template_id || "classic_grid",
       slot_id: slot.slot_id,
       caption: cleanMediaText(buildFlowchartCaption({ ...normalized, caption: response.caption }, plan.purpose, language), normalized.title),
     };
