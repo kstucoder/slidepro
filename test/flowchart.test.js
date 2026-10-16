@@ -24,8 +24,8 @@ const validFlowchart = {
   edges: [
     { from: "source", to: "filter" },
     { from: "filter", to: "quality" },
-    { from: "treatment", to: "filter" },
-    { from: "filter", to: "supply" },
+    { from: "quality", to: "treatment" },
+    { from: "treatment", to: "supply" },
   ],
 };
 
@@ -33,19 +33,25 @@ test("Graphviz oqim sxemasi xavfsiz JSON sxemasi va DOT string escaping bilan tu
   assert.equal(normalizeFlowchartData(validFlowchart).nodes.length, 5);
   const dot = buildFlowchartDot(validFlowchart);
   assert.match(dot, /digraph Flowchart/);
-  assert.match(dot, /ranksep="0\.825"/, "tanlangan shablonning qator oralig‘i 50% kengayadi");
-  assert.ok(dot.includes(`label="Suvni tozalash${String.fromCharCode(92)}ntarkibi va aloqalari"`), "uzun sarlavha kenglikni toraytirib, balandlikni oshirish uchun o‘raladi");
+  assert.match(dot, /ranksep="0\.550"/, "gorizontal flowchartda ortiqcha enni oshirmasdan ixcham oraliq ishlatiladi");
+  assert.doesNotMatch(dot, /Suvni tozalash tarkibi va aloqalari/, "flowchart sarlavhasi rasm ichiga kiritilmasin");
+  const normalized = normalizeFlowchartData(validFlowchart);
+  assert.equal(normalized.title, validFlowchart.title, "sarlavha DOCX captioni uchun ma'lumotda saqlansin");
   assert.ok(dot.includes(`Filtrlash ${String.fromCharCode(92)}"`) && dot.includes(`${String.fromCharCode(92)}nsystem`), "o‘ralgan label ichidagi qo‘shtirnoq Graphviz uchun escape qilinsin");
   assert.match(dot, /Suv sifati/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, id: 'x; system("bad")' }) }), /xavfsiz format/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [{ from: "source", to: "missing" }, ...validFlowchart.edges.slice(1)] }), /mavjud bo'lmagan node/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, kind: "record" }) }), /noma'lum yoki mos bo'lmagan node turi/);
-  assert.equal(normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.slice(0, 4), edges: validFlowchart.edges.slice(0, 3) }).nodes.length, 4,
+  assert.equal(normalizeFlowchartData({
+    ...validFlowchart,
+    nodes: [validFlowchart.nodes[0], validFlowchart.nodes[1], validFlowchart.nodes[2], validFlowchart.nodes[4]],
+    edges: [{ from: "source", to: "filter" }, { from: "filter", to: "quality" }, { from: "quality", to: "supply" }],
+  }).nodes.length, 4,
     "mazmunan yetarli bo‘lsa 2–5 tugun ishlatish mumkin");
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.slice(0, 1), edges: [] }), /2–5 ta node/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: [...validFlowchart.nodes, { id: "extra", label: "Qo'shimcha", kind: "process" }] }), /2–5 ta node/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, label: "Bir ikki uch to'rt besh olti" }) }), /1–5 ta qisqa so'z/);
-  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [...validFlowchart.edges, { from: "quality", to: "source" }] }), /bu diagramma turida sikl bo'lmasin/);
+  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [...validFlowchart.edges, { from: "quality", to: "source" }] }), /faqat input→process→output zanjiri/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [...validFlowchart.edges, { from: "filter", to: "filter" }] }), /o'ziga ulanmasin/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [...validFlowchart.edges, { from: "source", to: "filter" }] }), /takrorlangan aloqa/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index === 2 ? { ...node, kind: "decision" } : node) }), /mos bo'lmagan node turi/);
@@ -64,7 +70,7 @@ test("beshta Graphviz semantik turi to‘g‘ri shakl va yo‘nalishda yaroqli P
     },
     pid_control_system: {
       diagram_type: "pid_control_system", title: "PID boshqaruv konturi",
-      nodes: [{ id: "ref", label: "Topshiriq signali", kind: "input" }, { id: "sum", label: "Xatolik yig'indisi", kind: "sum" }, { id: "pid", label: "PID rostlagich", kind: "controller" }, { id: "plant", label: "Boshqaruv obyekti", kind: "plant" }, { id: "sensor", label: "O'lchov datchigi", kind: "sensor" }],
+      nodes: [{ id: "ref", label: "Topshiriq signali", kind: "input" }, { id: "sum", label: "Σ", kind: "sum" }, { id: "pid", label: "PID rostlagich", kind: "controller" }, { id: "plant", label: "Boshqaruv obyekti", kind: "plant" }, { id: "sensor", label: "O'lchov datchigi", kind: "sensor" }],
       edges: [{ from: "ref", to: "sum" }, { from: "sum", to: "pid" }, { from: "pid", to: "plant" }, { from: "plant", to: "sensor" }, { from: "sensor", to: "sum", label: "Teskari aloqa" }],
     },
     uml_software_architecture: {
@@ -107,28 +113,30 @@ test("beshta Graphviz semantik turi to‘g‘ri shakl va yo‘nalishda yaroqli P
 test("o‘zbekcha ishda Graphviz ichidagi inglizcha title, tugun va qirra matni saqlanadi", () => {
   const englishLabels = {
     language: "o'zbek",
+    diagram_type: "pid_control_system",
     title: "Feedback control system",
     nodes: [
-      { id: "sensor", label: "Sensor input", kind: "input" },
-      { id: "controller", label: "Controller model", kind: "process" },
-      { id: "signal", label: "Control signal", kind: "output" },
-      { id: "plant", label: "Control plant", kind: "process" },
-      { id: "feedback", label: "Feedback measure", kind: "input" },
+      { id: "reference", label: "Reference input", kind: "input" },
+      { id: "sum", label: "Σ", kind: "sum" },
+      { id: "controller", label: "Controller model", kind: "controller" },
+      { id: "plant", label: "Control plant", kind: "plant" },
+      { id: "sensor", label: "Output feedback sensor", kind: "sensor" },
     ],
     edges: [
-      { from: "sensor", to: "controller", label: "" },
-      { from: "controller", to: "signal", label: "" },
-      { from: "signal", to: "plant", label: "" },
-      { from: "feedback", to: "controller", label: "" },
+      { from: "reference", to: "sum", label: "" },
+      { from: "sum", to: "controller", label: "" },
+      { from: "controller", to: "plant", label: "" },
+      { from: "plant", to: "sensor", label: "" },
+      { from: "sensor", to: "sum", label: "Feedback" },
     ],
   };
   const normalized = normalizeFlowchartData(englishLabels, { language: "o'zbek" });
   assert.equal(normalized.title, "Feedback control system");
-  assert.deepEqual(normalized.nodes.map(node => node.label), ["Sensor input", "Controller model", "Control signal", "Control plant", "Feedback measure"]);
-  assert.deepEqual(normalized.edges.map(edge => edge.label), ["", "", "", ""]);
+  assert.deepEqual(normalized.nodes.map(node => node.label), ["Reference input", "Σ", "Controller model", "Control plant", "Output feedback sensor"]);
+  assert.deepEqual(normalized.edges.map(edge => edge.label), ["", "", "", "", "Feedback"]);
   const visibleText = [normalized.title, ...normalized.nodes.map(node => node.label), ...normalized.edges.map(edge => edge.label)].join(" ");
   assert.match(visibleText, /\b(?:start|end|sensor|controller|input|output|yes|no|feedback|control|system)\b/i);
-  assert.match(buildFlowchartDot(englishLabels), /label="Feedback control\\nsystem"/);
+  assert.doesNotMatch(buildFlowchartDot(englishLabels), /Feedback control system/, "inglizcha sarlavha ham rasmga chiqarilmasin");
 
   const mixedLanguage = normalizeFlowchartData({ ...englishLabels, title: "Modeldan vaqt-domain javobigacha" }, { language: "o'zbek" });
   assert.equal(mixedLanguage.title, "Modeldan vaqt-domain javobigacha");
@@ -236,6 +244,7 @@ test("outline va bob promptlari Graphviz flowchartni JSON media sifatida so'rayd
   assert.match(prompt, /process_sequence/);
   assert.match(prompt, /mavzu, bob va reja maqsadiga bevosita mos/);
   assert.match(prompt, /jarayon qadamlarini chapdan o‘ngga/);
+  assert.match(prompt, /faqat bevosita keyingi tugunga/);
   assert.match(prompt, /Algoritm bo‘lmasa start\/end\/decision belgilarini ishlatma/);
   assert.match(prompt, /O‘zbekcha captionni "Izoh:"/);
   assert.match(prompt, /diagram_type="process_sequence"/);
@@ -248,7 +257,36 @@ test("outline va bob promptlari Graphviz flowchartni JSON media sifatida so'rayd
   assert.match(mediaPrompt, /Mavzu, bob va reja maqsadiga bevosita mos/);
   assert.match(mediaPrompt, /Grafik yo‘nalishi: chapdan o‘ngga/);
   assert.match(mediaPrompt, /bajarilish tartibida chapdan o‘ngga/);
+  assert.match(mediaPrompt, /faqat bevosita keyingi tugunga/);
   assert.match(mediaPrompt, /Faqat quyidagi kind qiymatlari/);
+});
+
+test("jarayon sxemasidagi sakrab o‘tuvchi o‘qlar mavzuga mos sodda zanjir bilan almashtiriladi", () => {
+  const plan = {
+    id: "ch1", title: "Iqtisodiy inqirozni erta aniqlash", flowchart_count: 1,
+    flowchart_plans: [{ diagram_type: "process_sequence", title: "Inqirozni erta aniqlash va javob choralarini tanlash", purpose: "indikatorlarni baholab siyosat choralarini tanlash" }],
+  };
+  const generated = {
+    type: "flowchart", diagram_type: "process_sequence", title: plan.flowchart_plans[0].title,
+    nodes: [
+      { id: "indicators", label: "Indikatorlar", kind: "step" },
+      { id: "risk", label: "Risk baholash", kind: "step" },
+      { id: "policy", label: "Siyosat tanlash", kind: "step" },
+      { id: "action", label: "Boshqaruv chorasi", kind: "step" },
+      { id: "monitoring", label: "Monitoring", kind: "step" },
+    ],
+    edges: [
+      { from: "indicators", to: "risk" }, { from: "risk", to: "policy" },
+      { from: "policy", to: "action" }, { from: "action", to: "monitoring" },
+      { from: "indicators", to: "policy" }, { from: "risk", to: "action" },
+    ],
+  };
+  const [repaired] = alignPlannedFlowchartBlocks(plan, [generated], "o'zbek");
+  assert.equal(repaired.diagram_type, "process_sequence");
+  assert.equal(repaired.edges.length, repaired.nodes.length - 1);
+  assert.deepEqual(repaired.edges.map(edge => [edge.from, edge.to]), repaired.nodes.slice(0, -1).map((node, index) => [node.id, repaired.nodes[index + 1].id]));
+  assert.match(repaired.nodes.map(node => node.label).join(" "), /inqiroz|indikator|siyosat/i, "zaxira chizma reja mavzusini saqlaydi");
+  assert.doesNotThrow(() => normalizeFlowchartData(repaired));
 });
 
 test("rejalashtirilgan flowchartning yo‘qligi yoki yaroqsiz JSON’i renderdan oldin rad etiladi", () => {
@@ -333,25 +371,30 @@ test("model captionida topshiriq qiymati bo'lmasa, mavjud flowchart captioni avt
 test("Graphviz caption inglizcha yorliqlarni tarjimasiz qabul qilib, qisqa o'zbekcha izoh beradi", () => {
   const english = {
     ...validFlowchart,
+    diagram_type: "pid_control_system",
     title: "Feedback control system",
     nodes: [
-      { id: "sensor", label: "Sensor input", kind: "input" },
-      { id: "controller", label: "Controller model", kind: "process" },
-      { id: "signal", label: "Control signal", kind: "output" },
-      { id: "plant", label: "Control plant", kind: "process" },
-      { id: "feedback", label: "Feedback measure", kind: "input" },
+      { id: "reference", label: "Reference input", kind: "input" },
+      { id: "sum", label: "Σ", kind: "sum" },
+      { id: "controller", label: "Controller model", kind: "controller" },
+      { id: "plant", label: "Control plant", kind: "plant" },
+      { id: "sensor", label: "Output feedback sensor", kind: "sensor" },
     ],
-    edges: [{ from: "sensor", to: "controller", label: "" }, { from: "controller", to: "signal", label: "" }, { from: "signal", to: "plant", label: "" }, { from: "feedback", to: "controller", label: "" }],
+    edges: [
+      { from: "reference", to: "sum", label: "" }, { from: "sum", to: "controller", label: "" },
+      { from: "controller", to: "plant", label: "" }, { from: "plant", to: "sensor", label: "" },
+      { from: "sensor", to: "sum", label: "Feedback" },
+    ],
   };
   english.caption = buildFlowchartCaption(english, "O'lchovga qarab boshqaruv qarorini yangilash jarayoni", "o'zbek");
-  const planned = [{ id: "ch1", title: "Tizim", flowchart_count: 1, flowchart_plans: [{ title: english.title }] }];
+  const planned = [{ id: "ch1", title: "Tizim", flowchart_count: 1, flowchart_plans: [{ title: english.title, diagram_type: "pid_control_system" }] }];
   assert.equal(validatePlannedMedia([{ content: [english] }], planned, { language: "o'zbek", minimumDiagramCount: 0 }), true);
   assert.match(english.caption, /^Izoh:/);
   const noGlossary = { ...english, caption: "Izoh: sxemada o'lchovga qarab boshqaruv qarorini yangilash bosqichlari ko'rsatiladi." };
   assert.equal(validatePlannedMedia([{ content: [noGlossary] }], planned, { language: "o'zbek", minimumDiagramCount: 0 }), true);
 
   const withoutCaption = alignPlannedFlowchartBlocks({
-    flowchart_plans: [{ title: english.title, purpose: "O'lchovga qarab boshqaruv qarorini yangilash jarayoni" }],
+    flowchart_plans: [{ title: english.title, purpose: "O'lchovga qarab boshqaruv qarorini yangilash jarayoni", diagram_type: "pid_control_system" }],
   }, [{ ...english, caption: "" }], "o'zbek");
   assert.match(withoutCaption[0].caption, /Izoh:/);
   assert.match(withoutCaption[0].caption, /o'lchovga qarab boshqaruv qarorini/i);

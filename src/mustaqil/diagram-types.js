@@ -56,7 +56,7 @@ function classifyGraphvizType(context = {}) {
   if (/\buml\b|class diagram|klass diagram|software architecture|dasturiy? arxitektur|dastur arxitektur|component diagram|komponent arxitektur/.test(text)) {
     return "uml_software_architecture";
   }
-  if (/process sequence|jarayonlar? ketma[\s-]?ket|bosqichlar? ketma[\s-]?ket|ketma[\s-]?ket|sequence diagram|\bworkflow\b|process flow|jarayon oqimi|jarayonlar oqimi/.test(text)) {
+  if (/process sequence|jarayonlar? ketma[\s-]?ket|bosqichlar? ketma[\s-]?ket|bosqichma[\s-]?bosqich|ketma[\s-]?ket|sequence diagram|\bworkflow\b|process flow|jarayon oqimi|jarayonlar oqimi|early warning|early detection|siyosat paketini.{0,32}tanlash/.test(text)) {
     return "process_sequence";
   }
   if (/functional block|funksional blok|block diagram|blok diagram|boshqaruv tizimi|control system|closed[- ]loop|yopiq kontur/.test(text)) {

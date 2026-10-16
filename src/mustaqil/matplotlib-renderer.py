@@ -145,14 +145,12 @@ def plot_experiment_results(data, ax):
         ax.legend(frameon=False, loc="best")
 
 
-def main():
-    data = json.load(sys.stdin)
+def build_figure(data):
     font = choose_font()
     matplotlib.rcParams.update({
         "font.family": "serif",
         "font.serif": [font],
         "font.size": 10,
-        "axes.titlesize": 13,
         "axes.labelsize": 10,
         "xtick.labelsize": 9,
         "ytick.labelsize": 9,
@@ -172,11 +170,18 @@ def main():
             plot_experiment_results(data, ax)
         else:
             raise ValueError(f"unsupported Matplotlib diagram type: {diagram_type}")
-        ax.set_title(str(data.get("title") or ""), pad=12)
         ax.grid(True, axis="both", alpha=0.22, linewidth=0.7)
         ax.set_axisbelow(True)
+    return fig, ax
+
+
+def main():
+    data = json.load(sys.stdin)
+    fig, _ = build_figure(data)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
         fig.savefig(sys.stdout.buffer, format="png", dpi=170, bbox_inches="tight")
-        plt.close(fig)
+    plt.close(fig)
 
 
 if __name__ == "__main__":

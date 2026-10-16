@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const JSZip = require("jszip");
 const sharp = require("sharp");
 const { renderFormula } = require("../src/mustaqil/formula");
-const { renderChart, wrapLabelLines, barSVG, lineSVG } = require("../src/mustaqil/chart");
+const { renderChart, wrapLabelLines, barSVG, lineSVG, pieSVG } = require("../src/mustaqil/chart");
 const { buildFlowchartDot, renderFlowchart } = require("../src/mustaqil/flowchart");
 const { buildDocument } = require("../src/mustaqil/builder");
 const { prerenderMedia } = require("../src/mustaqil/generate");
@@ -48,20 +48,20 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
 
   const flowchartInput = {
     type: "flowchart",
-    diagram_type: "functional_block_diagram",
+    diagram_type: "process_sequence",
     title: "Ichimlik suvini tozalash tarkibi",
     nodes: [
       { id: "source", label: "Xom suv manbai", kind: "input" },
-      { id: "filter", label: "Filtrlash tizimi", kind: "process" },
-      { id: "quality", label: "Suv sifati mezoni", kind: "process" },
-      { id: "treatment", label: "Dezinfeksiya", kind: "process" },
+      { id: "filter", label: "Filtrlash tizimi", kind: "step" },
+      { id: "treatment", label: "Dezinfeksiya", kind: "step" },
+      { id: "quality", label: "Suv sifati mezoni", kind: "step" },
       { id: "deliver", label: "Ichimlik suvi ta'minoti", kind: "output" },
     ],
     edges: [
       { from: "source", to: "filter" },
-      { from: "filter", to: "quality" },
-      { from: "treatment", to: "filter" },
-      { from: "filter", to: "deliver" },
+      { from: "filter", to: "treatment" },
+      { from: "treatment", to: "quality" },
+      { from: "quality", to: "deliver" },
     ],
     caption: "Izoh: suv manbai, filtrlash, dezinfeksiya va sifat mezonining o'zaro aloqalari.",
   };
@@ -85,7 +85,7 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
     title: "PID boshqaruv tizimining tarkibi",
     nodes: [
       { id: "setpoint", label: "Topshiriq signali", kind: "input" },
-      { id: "sum", label: "Xatolik yig'indisi", kind: "sum" },
+      { id: "sum", label: "Σ", kind: "sum" },
       { id: "controller", label: "PID rostlagich", kind: "controller" },
       { id: "plant", label: "Boshqaruv obyekti", kind: "plant" },
       { id: "sensor", label: "Datchik o'lchovi", kind: "sensor" },
@@ -117,10 +117,10 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
             labels: ["A", "B"], values: [1, 2], data_source: "sintetik sinov ma’lumoti",
           },
           {
-            type: "flowchart", number: 2, title: "Ichimlik suvini tozalash tarkibi",
+            type: "flowchart", number: 2, diagram_type: "process_sequence", title: "Ichimlik suvini tozalash tarkibi",
             caption: "Ichimlik suvini tozalash tarkibi. Izoh: suv manbai, filtrlash, dezinfeksiya va sifat mezonining o'zaro aloqalari.",
-            nodes: [{ id: "source", label: "Xom suv manbai", kind: "input" }, { id: "filter", label: "Filtrlash tizimi", kind: "process" }, { id: "quality", label: "Suv sifati mezoni", kind: "process" }, { id: "treatment", label: "Dezinfeksiya", kind: "process" }, { id: "deliver", label: "Ichimlik suvi ta'minoti", kind: "output" }],
-            edges: [{ from: "source", to: "filter" }, { from: "filter", to: "quality" }, { from: "treatment", to: "filter" }, { from: "filter", to: "deliver" }],
+            nodes: [{ id: "source", label: "Xom suv manbai", kind: "input" }, { id: "filter", label: "Filtrlash tizimi", kind: "step" }, { id: "treatment", label: "Dezinfeksiya", kind: "step" }, { id: "quality", label: "Suv sifati mezoni", kind: "step" }, { id: "deliver", label: "Ichimlik suvi ta'minoti", kind: "output" }],
+            edges: [{ from: "source", to: "filter" }, { from: "filter", to: "treatment" }, { from: "treatment", to: "quality" }, { from: "quality", to: "deliver" }],
           },
           { type: "table", number: 1, title: "Sinov jadvali", caption: "N-jadval. Sinov jadvali", headers: ["A", "B", "C"], rows: [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]] },
         ],
@@ -137,7 +137,7 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
           {
             type: "flowchart", number: 4, diagram_type: "pid_control_system", title: "PID boshqaruv tizimining tarkibi",
             caption: "PID boshqaruv tizimining tarkibi. Izoh: topshiriq va o'lchov signallari rostlagich, ijro mexanizmi hamda boshqaruv obyekti bilan bog'liq.",
-            nodes: [{ id: "setpoint", label: "Topshiriq signali", kind: "input" }, { id: "sum", label: "Xatolik yig'indisi", kind: "sum" }, { id: "controller", label: "PID rostlagich", kind: "controller" }, { id: "plant", label: "Boshqaruv obyekti", kind: "plant" }, { id: "sensor", label: "Datchik o'lchovi", kind: "sensor" }],
+            nodes: [{ id: "setpoint", label: "Topshiriq signali", kind: "input" }, { id: "sum", label: "Σ", kind: "sum" }, { id: "controller", label: "PID rostlagich", kind: "controller" }, { id: "plant", label: "Boshqaruv obyekti", kind: "plant" }, { id: "sensor", label: "Datchik o'lchovi", kind: "sensor" }],
             edges: [{ from: "setpoint", to: "sum" }, { from: "sum", to: "controller" }, { from: "controller", to: "plant" }, { from: "plant", to: "sensor" }, { from: "sensor", to: "sum", label: "Teskari aloqa" }],
           },
         ],
@@ -192,13 +192,14 @@ test("DOCX’dagi barcha diagrammalar sahifa eni/balandligining 60 foizidan oshm
       }, {
         type: "flowchart", number: 2, title: "Suvni tozalash tarkibi", caption: "Izoh: suvni filtrlash va sifat nazorati.",
         nodes: [
-          { id: "source", label: "Xom suv manbai", kind: "input" },
-          { id: "filter", label: "Filtrlash tizimi", kind: "process" },
-          { id: "quality", label: "Suv sifati", kind: "process" },
-          { id: "treatment", label: "Dezinfeksiya", kind: "process" },
+          { id: "source", label: "Xom suv manbai", kind: "step" },
+          { id: "filter", label: "Filtrlash tizimi", kind: "step" },
+          { id: "treatment", label: "Dezinfeksiya", kind: "step" },
+          { id: "quality", label: "Suv sifati", kind: "step" },
           { id: "supply", label: "Ichimlik suvi", kind: "output" },
         ],
-        edges: [{ from: "source", to: "filter" }, { from: "filter", to: "quality" }, { from: "treatment", to: "filter" }, { from: "filter", to: "supply" }],
+        diagram_type: "process_sequence",
+        edges: [{ from: "source", to: "filter" }, { from: "filter", to: "treatment" }, { from: "treatment", to: "quality" }, { from: "quality", to: "supply" }],
       }],
     }],
     references: [],
@@ -234,8 +235,12 @@ test("uzun chart X-o'qi yorliqlari satrlarga o'raladi va to'liq matnni saqlaydi"
   const labels = [longLabel, "Current system response"];
   const barSvg = barSVG({ labels, values: [12, 16], title: "Bar labels" });
   const lineSvg = lineSVG({ labels: [longLabel, "Middle response", "Final output"], values: [12, 16, 18], title: "Line labels" });
+  const pie = pieSVG({ labels: ["A", "B"], values: [2, 3], title: "Pie labels" });
   assert.match(barSvg, /<tspan/);
   assert.match(lineSvg, /<tspan/);
+  assert.doesNotMatch(barSvg, /Bar labels/, "bar nomi DOCX captionida qoladi, rasm ichida takrorlanmaydi");
+  assert.doesNotMatch(lineSvg, /Line labels/, "line nomi DOCX captionida qoladi, rasm ichida takrorlanmaydi");
+  assert.doesNotMatch(pie, /Pie labels/, "pie nomi DOCX captionida qoladi, rasm ichida takrorlanmaydi");
   for (const word of longLabel.split(/\s+/)) {
     assert.ok(barSvg.includes(word), `bar SVG yo'riq yorlig'idagi ${word} so'zini saqlasin`);
     assert.ok(lineSvg.includes(word), `line SVG yo'riq yorlig'idagi ${word} so'zini saqlasin`);
@@ -255,7 +260,7 @@ test("media renderi xato bo'lsa ham DOCX matnli fallback bilan tayyorlanadi", as
     content: [
       { type: "chart", number: 1, title: "Fallback grafik", caption: "Grafik captioni", chartType: "invalid", labels: ["A", "B"], values: [1, 2], data_source: "Sintetik illustrativ ma'lumot; real o'lchov emas" },
       { type: "flowchart", number: 2, title: "Fallback oqim sxemasi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [], edges: [] },
-      { type: "flowchart", number: 3, diagram_type: "functional_block_diagram", title: "Buzilgan PNG sinovi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [{ id: "a", label: "Birinchi bosqich", kind: "process" }, { id: "b", label: "Ikkinchi bosqich", kind: "process" }, { id: "c", label: "Uchinchi bosqich", kind: "process" }, { id: "d", label: "To‘rtinchi bosqich", kind: "process" }, { id: "e", label: "Beshinchi bosqich", kind: "process" }], edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }, { from: "d", to: "b" }, { from: "b", to: "e" }] },
+      { type: "flowchart", number: 3, diagram_type: "process_sequence", title: "Buzilgan PNG sinovi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [{ id: "a", label: "Birinchi bosqich", kind: "step" }, { id: "b", label: "Ikkinchi bosqich", kind: "step" }, { id: "c", label: "Uchinchi bosqich", kind: "step" }, { id: "d", label: "To‘rtinchi bosqich", kind: "step" }, { id: "e", label: "Beshinchi bosqich", kind: "output" }], edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }, { from: "c", to: "d" }, { from: "d", to: "e" }] },
     ],
   };
   const cache = await prerenderMedia([chapter]);

@@ -7,7 +7,7 @@ const FLOWCHART_TEMPLATES = Object.freeze([
     description: "Tizimning haqiqiy kirishlari, funksional bloklari va chiqishlarini chapdan o‘ngga ko‘rsatadi.",
     diagramType: "functional_block_diagram",
     direction: "chapdan o‘ngga, signal yoki axborot oqimi bo‘yicha",
-    topologyGuidance: "Faqat mavzuda mavjud bo‘lgan funksional bloklarni tuz. Oddiy IPO chizmasida 3 tugun: haqiqiy kirish → qayta ishlash bloki → chiqish; sabab–oqibat tahlilida ko‘pi bilan 4 sabab tugunini bitta asosiy natija/muammo tuguniga yo‘naltir, jami 5 tugundan oshma. Oqimni chapdan o‘ngga joyla; sababiy bog‘lanishni yoki qurilma ichki bloklarini mavzuga qarab nomla. Algoritmga xos start/end/qaror belgilarini ishlatma.",
+    topologyGuidance: "Faqat mavzuda bor, aniq nomlangan funksional bloklarni tuz. Ikki ko‘rinishdan birini tanla: IPO/ishlash oqimi bo‘lsa input → 1–3 process → output tarzida bitta chapdan o‘ngga zanjir; sabab–oqibat bo‘lsa 2–4 haqiqiy input-sababni bitta output-natijaga bevosita ulab fan-in tuzilma qil. Sabab tugunlarini bir ustunga, natijani alohida ustunga joyla; teskari, sakrab o‘tuvchi, parallel yoki qo‘shimcha chirmashgan qirralarni qo‘shma. Jami 2–5 tugun; algoritmga xos start/end/qaror belgilarini ishlatma.",
     allowedKinds: ["input", "process", "output"],
     nodeAttrs: {
       input: 'shape=parallelogram, style="filled", fillcolor="#EAF2FB", color="#315F8A"',
@@ -25,7 +25,7 @@ const FLOWCHART_TEMPLATES = Object.freeze([
     description: "Standart boshlash/tugatish, amal va zarur qaror belgilariga ega yuqoridan pastga algoritm.",
     diagramType: "algorithm_flowchart",
     direction: "yuqoridan pastga, bajarilish tartibi bo‘yicha",
-    topologyGuidance: "Algoritmning mavzuga oid haqiqiy bajarilish amallarini qisqa yoz. Boshlanish va tugashni start/end belgisi bilan ko‘rsat; kiritish/chiqarish bo‘lsa parallelogram, hisoblash/amal bo‘lsa to‘rtburchak, shart faqat haqiqatan kerak bo‘lsa romb ishlat. Rombdan chiqadigan yo‘llarni Ha/Yo‘q yoki true/false deb belgilab, kerakli takrorlashni ko‘pi bilan 5 tugun ichida ko‘rsat. Ketma-ketlik chapdan o‘ngga emas, yuqoridan pastga o‘qilsin.",
+    topologyGuidance: "Algoritmning mavzuga oid haqiqiy bajarilish amallarini qisqa yoz. Start node birinchi, end node oxirgi bo‘lsin; kiritish/chiqarish bo‘lsa parallelogram, hisoblash/amal bo‘lsa to‘rtburchak, shart faqat haqiqatan kerak bo‘lsa romb ishlat. Ixcham chizmada ko‘pi bilan bitta qaror tuguni bo‘lsin; undan chiqadigan aynan ikki shoxni Ha/Yo‘q yoki true/false deb belgila, keyingi amallarni qaror shoxlaridan tartibli pastga joyla. Ortiqcha, sakrab o‘tuvchi yoki bir-birini kesadigan qirralarni qo‘shma. Ko‘pi bilan 5 tugun; o‘qish yo‘nalishi yuqoridan pastga bo‘lsin.",
     allowedKinds: ["start", "end", "process", "decision", "input", "output"],
     nodeAttrs: {
       start: 'shape=ellipse, style="filled", fillcolor="#E4F2E5", color="#39724B", penwidth=1.5',
@@ -46,7 +46,7 @@ const FLOWCHART_TEMPLATES = Object.freeze([
     description: "Topshiriq, jamlash nuqtasi, PID rostlagich, boshqaruv obyekti va sensor teskari aloqasidan iborat yopiq kontur.",
     diagramType: "pid_control_system",
     direction: "chapdan o‘ngga, teskari aloqa konturi bilan",
-    topologyGuidance: "Aynan 5 ta mavzuga oid blok tuz: topshiriq signali (input), xatolikni hisoblovchi jamlash nuqtasi (sum), PID rostlagich (controller), boshqaruv obyekti (plant), o‘lchov beruvchi sensor (sensor). Oldinga signalni input → sum → controller → plant → sensor yo‘nalishida, sensor chiqishidan sum ga qaytuvchi teskari aloqa qirrasi bilan ko‘rsat. Teskari aloqa qirrasi sikl hosil qilishi shart; keraksiz blok, umumiy yorliq yoki algoritm qaror belgisi qo‘shma.",
+    topologyGuidance: "Aynan 5 ta mavzuga oid blok tuz: topshiriq signali (input), xatolikni hisoblovchi jamlash nuqtasi (sum), PID rostlagich (controller), boshqaruv obyekti (plant), o‘lchov beruvchi sensor (sensor). Doira shaklidagi sum tuguni ichiga faqat bitta ixcham Σ belgisini yoz; uzun matnni doiraga joylama. Oldinga signalni input → sum → controller → plant → sensor bo‘yicha bitta gorizontal qatorda joyla; sensorning teskari aloqa qirrasini tugunlar ostidan alohida qaytarib sum ga ulang. Bevosita qo‘shimcha qirra, keraksiz blok, umumiy yorliq yoki algoritm qaror belgisi qo‘shma.",
     allowedKinds: ["input", "sum", "controller", "plant", "sensor"],
     nodeAttrs: {
       input: 'shape=parallelogram, style="filled", fillcolor="#EAF2FB", color="#315F8A"',
@@ -66,14 +66,14 @@ const FLOWCHART_TEMPLATES = Object.freeze([
     description: "Dastur komponentlari, klasslari, interfeyslari va ma’lumotlar ombori orasidagi nomlangan bog‘lanishlar.",
     diagramType: "uml_software_architecture",
     direction: "yuqoridan pastga, tizim qatlamlari va meros/qaramlik munosabatlari bo‘yicha",
-    topologyGuidance: "Faqat mavzudagi haqiqiy dasturiy komponent, klass, interfeys, actor yoki ma’lumotlar omborini ko‘rsat. Oddiy UML/arxitektura munosabatlarini depends on, implements, calls, reads, writes kabi nomlangan qirralar bilan ifodala. Tuzilma ierarxik bo‘lsa, bitta yuqori darajadagi component/classni tepaga, ko‘pi bilan to‘rtta bevosita quyi modulni pastga joyla; jami 5 tugundan va mavzuga oid elementlardan oshma. Dastur arxitekturasi bo‘lmagan mavzuda bu turdan foydalanma.",
+    topologyGuidance: "Faqat mavzudagi haqiqiy dasturiy komponent, klass, interfeys, ishtirokchi yoki ma’lumotlar ombori elementlarini ko‘rsat. UML munosabatlarini depends on, implements, calls, reads, writes kabi qisqa nom bilan ber. Chizma bitta ildizli, yuqoridan pastga yo‘nalgan daraxt bo‘lsin; aka-uka modullarni bir qatorda joyla, har tugun faqat bitta yuqori modulga ulangan bo‘lsin. Kesishuvchi, qaytuvchi yoki mavzuga aloqasiz qirralarni qo‘shma; jami 2–5 element. Dastur arxitekturasi bo‘lmagan mavzuda bu turdan foydalanma.",
     allowedKinds: ["component", "class", "interface", "database", "actor"],
     nodeAttrs: {
       component: 'shape=component, style="filled", fillcolor="#EEF2FB", color="#596B9A"',
       class: 'shape=record, style="filled", fillcolor="#FFFFFF", color="#596B9A"',
       interface: 'shape=box, style="rounded,dashed", fillcolor="#F7F8FC", color="#596B9A"',
       database: 'shape=cylinder, style="filled", fillcolor="#E7F3F1", color="#39796F"',
-      actor: 'shape=ellipse, style="filled", fillcolor="#FFF4E4", color="#9A7328"',
+      actor: 'shape=box, style="filled", fillcolor="#FFF4E4", color="#9A7328"',
     },
     layoutEngine: "dot",
     graphAttrs: ['rankdir=TB', 'splines=polyline', 'nodesep="0.34"', 'ranksep="0.58"', 'compound=true', 'bgcolor="white"'],
@@ -86,7 +86,7 @@ const FLOWCHART_TEMPLATES = Object.freeze([
     description: "Mavzuga xos jarayon qadamlari va ularning chapdan o‘ngga bajarilish tartibi.",
     diagramType: "process_sequence",
     direction: "chapdan o‘ngga, vaqt yoki bajarilish tartibi bo‘yicha",
-    topologyGuidance: "Haqiqiy jarayon qadamlarini vaqt/bajarilish tartibida chapdan o‘ngga joyla. Har tugun bitta mazmunli, mavzuga xos qadam yoki ishtirokchini ifodalasin; qirralar keyingi qadamga o‘tishni ko‘rsatsin. Algoritm bo‘lmasa start/end/decision belgilarini ishlatma; bosqich nomlarini takrorlama va ortiqcha qadam to‘qima. 2–5 ta element yetarli.",
+    topologyGuidance: "Haqiqiy jarayon qadamlarini vaqt/bajarilish tartibida chapdan o‘ngga joyla. Har tugun bitta mazmunli, mavzuga xos qadam yoki ishtirokchini ifodalasin; har qirra faqat bevosita keyingi tugunga ulansin va barcha qadamlar bitta sodda zanjir hosil qilsin. Qadamlarni sakrab bog‘laydigan, teskari, parallel yoki qo‘shimcha qaytuvchi qirralarni qo‘shma — ular o‘qlarni chirmashtiradi. Algoritm bo‘lmasa start/end/decision belgilarini ishlatma; bosqich nomlarini takrorlama va ortiqcha qadam to‘qima. 2–5 ta element yetarli.",
     allowedKinds: ["step", "input", "output"],
     nodeAttrs: {
       step: 'shape=box, style="rounded,filled", fillcolor="#F1F6FB", color="#315F8A"',

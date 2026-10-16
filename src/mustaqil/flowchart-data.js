@@ -266,6 +266,26 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language, dia
   if (normalizedDiagramType === "process_sequence" && edges.some(edge => nodeOrder.get(edge.from) >= nodeOrder.get(edge.to))) {
     throw new Error("flowchart: jarayon ketma-ketligida qirralar chapdan o'ngga, bajarilish tartibida bo'lsin");
   }
+  if (normalizedDiagramType === "process_sequence") {
+    const requiredPairs = nodes.slice(0, -1).map((node, index) => `${node.id}\u0000${nodes[index + 1].id}`);
+    if (edges.length !== requiredPairs.length || requiredPairs.some(pair => !edgePairs.has(pair))) {
+      throw new Error("flowchart: jarayon ketma-ketligida har qadam faqat bevosita keyingi tugunga ulansin");
+    }
+  }
+  if (normalizedDiagramType === "functional_block_diagram") {
+    const isLinearFlow = nodes[0].kind === "input" && nodes.at(-1).kind === "output"
+      && nodes.slice(1, -1).every(node => node.kind === "process")
+      && edges.length === nodes.length - 1
+      && nodes.slice(0, -1).every((node, index) => edgePairs.has(`${node.id}\u0000${nodes[index + 1].id}`));
+    const effect = nodes.at(-1);
+    const isCauseEffect = nodes.length >= 3 && effect.kind === "output"
+      && nodes.slice(0, -1).every(node => node.kind === "input")
+      && edges.length === nodes.length - 1
+      && edges.every(edge => edge.to === effect.id);
+    if (!isLinearFlow && !isCauseEffect) {
+      throw new Error("flowchart: funksional sxema faqat input→process→output zanjiri yoki sabablar→bitta natija fan-in bo'lsin");
+    }
+  }
 
   const outgoing = new Map([...ids].map(id => [id, []]));
   const undirected = new Map([...ids].map(id => [id, []]));
@@ -302,12 +322,49 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language, dia
     const starts = nodes.filter(node => node.kind === "start");
     const ends = nodes.filter(node => node.kind === "end");
     if (starts.length !== 1 || ends.length !== 1) throw new Error("flowchart: algoritmda bittadan start va end belgisi bo'lishi kerak");
+    if (nodes[0].kind !== "start" || nodes.at(-1).kind !== "end") {
+      throw new Error("flowchart: algoritm startdan boshlanib end bilan tugasin");
+    }
+    if (edges.some(edge => edge.to === starts[0].id) || !edges.some(edge => edge.to === ends[0].id)) {
+      throw new Error("flowchart: algoritmda startga kiruvchi qirra bo'lmasin va endga kamida bitta kiruvchi qirra bo'lsin");
+    }
+    const reachableFromStart = new Set([starts[0].id]);
+    const fromStartQueue = [starts[0].id];
+    while (fromStartQueue.length) {
+      for (const next of outgoing.get(fromStartQueue.shift())) {
+        if (reachableFromStart.has(next)) continue;
+        reachableFromStart.add(next);
+        fromStartQueue.push(next);
+      }
+    }
+    const incoming = new Map([...ids].map(id => [id, []]));
+    edges.forEach(edge => incoming.get(edge.to).push(edge.from));
+    const canReachEnd = new Set([ends[0].id]);
+    const toEndQueue = [ends[0].id];
+    while (toEndQueue.length) {
+      for (const previous of incoming.get(toEndQueue.shift())) {
+        if (canReachEnd.has(previous)) continue;
+        canReachEnd.add(previous);
+        toEndQueue.push(previous);
+      }
+    }
+    if (nodes.some(node => !reachableFromStart.has(node.id) || !canReachEnd.has(node.id))) {
+      throw new Error("flowchart: algoritmda barcha tugunlar startdan yetib boriladigan va endga olib boradigan yo'lda bo'lsin");
+    }
+    const decisions = nodes.filter(node => node.kind === "decision");
+    if (decisions.length > 1) throw new Error("flowchart: ixcham algoritmda ko'pi bilan bitta qaror tuguni bo'lsin");
+    for (const node of nodes) {
+      const successors = edges.filter(edge => edge.from === node.id);
+      if (node.kind === "end" ? successors.length !== 0 : node.kind !== "decision" && successors.length !== 1) {
+        throw new Error("flowchart: qaror tugunidan tashqari har bir algoritm qadami bitta keyingi qadamga ulansin");
+      }
+    }
     for (const decision of nodes.filter(node => node.kind === "decision")) {
       const branches = edges.filter(edge => edge.from === decision.id);
       const branchLabels = new Set(branches.map(edge => edge.label.toLocaleLowerCase().replace(/[’‘`]/g, "'")));
       const hasYes = [...branchLabels].some(label => /^(ha|yes|true)$/.test(label));
       const hasNo = [...branchLabels].some(label => /^(yo'q|yo‘q|no|false)$/.test(label.replace(/’/g, "'")));
-      if (branches.length < 2 || !hasYes || !hasNo) throw new Error("flowchart: qaror tugunidan Ha va Yo'q deb belgilangan kamida ikki shox chiqsin");
+      if (branches.length !== 2 || !hasYes || !hasNo) throw new Error("flowchart: qaror tugunidan Ha va Yo'q deb belgilangan aynan ikki shox chiqsin");
     }
   }
   if (normalizedDiagramType === "pid_control_system") {
@@ -315,14 +372,28 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language, dia
     if (requiredKinds.some(kind => nodes.filter(node => node.kind === kind).length !== 1)) {
       throw new Error("flowchart: PID diagrammasida input, sum, controller, plant va sensor bloklaridan bittadan bo'lsin");
     }
+    const sumLabel = nodes.find(node => node.kind === "sum").label.replace(/\s+/g, "");
+    if (!/^(?:Σ|∑|sum|\+)$/iu.test(sumLabel)) {
+      throw new Error("flowchart: PID sum tuguni doirasiga sig'adigan ixcham 'Σ' yoki 'sum' belgisi bilan yozilsin");
+    }
     if (!hasDirectedCycle) throw new Error("flowchart: PID tizimida sensorni summatorga qaytaruvchi yopiq teskari aloqa bo'lishi kerak");
     const byKind = new Map(nodes.map(node => [node.kind, node.id]));
     const requiredPairs = [
       ["input", "sum"], ["sum", "controller"], ["controller", "plant"], ["plant", "sensor"], ["sensor", "sum"],
     ];
-    if (requiredPairs.some(([fromKind, toKind]) => !edgePairs.has(`${byKind.get(fromKind)}\u0000${byKind.get(toKind)}`))) {
-      throw new Error("flowchart: PID signal path input→sum→controller→plant→sensor→sum to'liq bo'lishi shart");
+    if (edges.length !== requiredPairs.length || requiredPairs.some(([fromKind, toKind]) => !edgePairs.has(`${byKind.get(fromKind)}\u0000${byKind.get(toKind)}`))) {
+      throw new Error("flowchart: PID signal path input→sum→controller→plant→sensor→sum to'liq va ortiqcha qirrasiz bo'lishi shart");
     }
+  }
+  if (normalizedDiagramType === "uml_software_architecture") {
+    const incomingCount = new Map(nodes.map(node => [node.id, 0]));
+    edges.forEach(edge => incomingCount.set(edge.to, incomingCount.get(edge.to) + 1));
+    const roots = nodes.filter(node => incomingCount.get(node.id) === 0);
+    const isOrderedTree = roots.length === 1 && roots[0].id === nodes[0].id
+      && edges.length === nodes.length - 1
+      && nodes.slice(1).every(node => incomingCount.get(node.id) === 1)
+      && edges.every(edge => nodeOrder.get(edge.from) < nodeOrder.get(edge.to));
+    if (!isOrderedTree) throw new Error("flowchart: UML arxitektura bitta ildizli, yuqoridan pastga tartiblangan daraxt bo'lsin");
   }
 
   const totalTextLength = title.length + nodes.reduce((sum, node) => sum + node.label.length, 0)

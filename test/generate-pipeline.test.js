@@ -100,20 +100,65 @@ function mediaResponse(userPrompt, attempts) {
     const chartType = userPrompt.match(/chartType=(bar|line|pie)/)?.[1] || "bar";
     return { slot_id: slotId, type: "chart", chartType, title: "Ko'rsatkichlar", labels: ["A", "B", "C"], values: [12, 19, 15], unit: "birlik", data_source: "Sintetik illustrativ ma'lumot; real o'lchov emas", caption: "Namunaviy solishtirish" };
   }
-  if (slotId.endsWith(":flowchart:1")) return {
-    slot_id: slotId, type: "flowchart", title: "Avtomatik boshqaruv tizimining tarkibi",
-    nodes: [
-      { id: "sensor", label: "Datchik o'lchovi", kind: "input" },
-      { id: "controller", label: "Rostlagich modeli", kind: "process" },
-      { id: "signal", label: "Boshqaruv signali", kind: "output" },
-      { id: "actuator", label: "Ijro mexanizmi", kind: "process" },
-      { id: "plant", label: "Boshqaruv obyekti", kind: "process" },
-    ],
-    edges: [
-      { from: "sensor", to: "controller" }, { from: "controller", to: "signal" },
-      { from: "signal", to: "actuator" }, { from: "actuator", to: "plant" },
-    ],
-  };
+  if (slotId.endsWith(":flowchart:1")) {
+    const diagramType = userPrompt.match(/Tanlangan va o‘zgarmas diagram_type: ([a-z_]+)/)?.[1] || "functional_block_diagram";
+    const examples = {
+      functional_block_diagram: {
+        nodes: [
+          { id: "sensor", label: "Datchik o‘lchovi", kind: "input" },
+          { id: "controller", label: "Rostlagich modeli", kind: "process" },
+          { id: "signal", label: "Boshqaruv signali", kind: "process" },
+          { id: "plant", label: "Boshqaruv obyekti", kind: "process" },
+          { id: "output", label: "O‘lchangan javob", kind: "output" },
+        ],
+        edges: [["sensor", "controller"], ["controller", "signal"], ["signal", "plant"], ["plant", "output"]],
+      },
+      process_sequence: {
+        nodes: [
+          { id: "sensor", label: "Datchik o‘lchovi", kind: "step" },
+          { id: "compare", label: "Topshiriq bilan taqqoslash", kind: "step" },
+          { id: "control", label: "Rostlagich hisoblash", kind: "step" },
+          { id: "actuate", label: "Ijro signalini uzatish", kind: "step" },
+          { id: "response", label: "Obyekt javobi", kind: "output" },
+        ],
+        edges: [["sensor", "compare"], ["compare", "control"], ["control", "actuate"], ["actuate", "response"]],
+      },
+      algorithm_flowchart: {
+        nodes: [
+          { id: "start", label: "Boshlash", kind: "start" },
+          { id: "measure", label: "O‘lchovni olish", kind: "input" },
+          { id: "decision", label: "Mezon bajarildimi?", kind: "decision" },
+          { id: "adjust", label: "Signalni tuzatish", kind: "process" },
+          { id: "end", label: "Natijani qayd etish", kind: "end" },
+        ],
+        edges: [["start", "measure"], ["measure", "decision"], ["decision", "adjust", "Ha"], ["decision", "end", "Yo‘q"], ["adjust", "end"]],
+      },
+      pid_control_system: {
+        nodes: [
+          { id: "reference", label: "Topshiriq signali", kind: "input" },
+          { id: "sum", label: "Σ", kind: "sum" },
+          { id: "controller", label: "PID rostlagich", kind: "controller" },
+          { id: "plant", label: "Boshqaruv obyekti", kind: "plant" },
+          { id: "sensor", label: "Datchik o‘lchovi", kind: "sensor" },
+        ],
+        edges: [["reference", "sum"], ["sum", "controller"], ["controller", "plant"], ["plant", "sensor"], ["sensor", "sum", "Teskari aloqa"]],
+      },
+      uml_software_architecture: {
+        nodes: [
+          { id: "control", label: "Boshqaruv komponenti", kind: "component" },
+          { id: "service", label: "Rostlash xizmati", kind: "class" },
+          { id: "database", label: "O‘lchovlar ombori", kind: "database" },
+        ],
+        edges: [["control", "service", "calls"], ["service", "database", "reads"]],
+      },
+    };
+    const selected = examples[diagramType] || examples.functional_block_diagram;
+    return {
+      slot_id: slotId, type: "flowchart", diagram_type: diagramType,
+      title: "Avtomatik boshqaruv tizimining tarkibi", nodes: selected.nodes,
+      edges: selected.edges.map(([from, to, label = ""]) => ({ from, to, label })),
+    };
+  }
   throw new Error(`Kutilmagan slot: ${slotId}`);
 }
 
@@ -172,6 +217,7 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
       "yakuniy hujjatdagi media nomlari va captionlarida sun'iy ma'lumot disclosure'i bo'lmasin");
     assert.match(documentXml, /1-formula\. Tizim modeli/);
     assert.match(documentXml, /2-formula\. O(?:&apos;|')tkinchi javob/);
+    assert.match(documentXml, /\d+-rasm\. Izoh:/, "Graphviz sarlavhasi rasm ichidan olib tashlansa ham DOCX captioni saqlansin");
     const bibliographyStart = documentXml.lastIndexOf("Foydalanilgan adabiyotlar");
     assert.notEqual(bibliographyStart, -1, "bibliografiya bo'limi DOCX ichida mavjud");
     const bibliographyXml = documentXml.slice(bibliographyStart);

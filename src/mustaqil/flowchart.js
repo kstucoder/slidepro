@@ -40,7 +40,7 @@ function wrapFlowchartLabel(value, maxLineLength = FLOWCHART_LABEL_LINE_LENGTH) 
   return lines.join("\n");
 }
 
-function buildFlowchartDot(input, { wrapLabels = true, ranksepMultiplier = FLOWCHART_HEIGHT_SCALE } = {}) {
+function buildFlowchartDot(input, { wrapLabels = true, ranksepMultiplier } = {}) {
   const explicitType = input?.diagram_type || input?.template_id;
   if (explicitType && !isGraphvizDiagramType(explicitType)) {
     throw new Error(`flowchart: noma'lum diagram_type (${explicitType})`);
@@ -52,27 +52,48 @@ function buildFlowchartDot(input, { wrapLabels = true, ranksepMultiplier = FLOWC
   });
   const template = getFlowchartTemplate(diagramType);
   const flowchart = normalizeFlowchartData(input, { diagramType: template.id });
-  const graphAttrs = template.graphAttrs.map(attribute => {
+  const horizontal = template.graphAttrs.includes("rankdir=LR");
+  const effectiveRanksepMultiplier = Number.isFinite(ranksepMultiplier)
+    ? ranksepMultiplier
+    : horizontal ? 1 : FLOWCHART_HEIGHT_SCALE;
+  const graphAttrs = template.graphAttrs.filter(attribute => !attribute.startsWith("bgcolor=")).map(attribute => {
     const ranksep = attribute.match(/^ranksep="([\d.]+)"$/);
     return ranksep
-      ? `ranksep="${(Number(ranksep[1]) * ranksepMultiplier).toFixed(3)}"`
+      ? `ranksep="${(Number(ranksep[1]) * effectiveRanksepMultiplier).toFixed(3)}"`
       : attribute;
   });
-  const graphTitle = wrapLabels ? wrapFlowchartLabel(flowchart.title) : flowchart.title;
   const lines = [
     "digraph Flowchart {",
-    `  graph [${[...graphAttrs, 'bgcolor="white"', 'pad="0.18"', 'fontname="Times New Roman"', 'labelloc="t"', `label="${escapeDotText(graphTitle)}"`, 'fontsize=18', 'fontcolor="#18324B"'].join(", ")}];`,
+    `  graph [${[...graphAttrs, 'bgcolor="white"', 'pad="0.22"', 'fontname="Times New Roman"'].join(", ")}];`,
     '  node [color="#457B9D", penwidth=1.4, fontname="Times New Roman", fontsize=12, fontcolor="#18324B", margin="0.16,0.10"];',
     `  edge [${[...template.edgeAttrs, 'fontname="Times New Roman"', 'fontsize=10', 'fontcolor="#40566B"'].join(", ")}];`,
   ];
 
   const nodeLine = (node, index) => {
-    const label = escapeDotText(wrapLabels ? wrapFlowchartLabel(node.label) : node.label);
+    const displayLabel = wrapLabels ? wrapFlowchartLabel(node.label) : node.label;
+    const label = escapeDotText(node.kind === "actor" ? `«actor»\n${displayLabel}` : displayLabel);
     const options = template.nodeAttrs[node.kind];
     return `    ${node.id} [label="${label}", ${options}];`;
   };
 
   flowchart.nodes.forEach((node, index) => lines.push(nodeLine(node, index)));
+
+  if (template.id === "functional_block_diagram" && flowchart.nodes.slice(0, -1).every(node => node.kind === "input")
+    && flowchart.nodes.at(-1)?.kind === "output" && flowchart.edges.every(edge => edge.to === flowchart.nodes.at(-1).id)) {
+    lines.push(`  { rank=same; ${flowchart.nodes.slice(0, -1).map(node => node.id).join("; ")}; }`);
+  }
+  if (template.id === "algorithm_flowchart") {
+    const decision = flowchart.nodes.find(node => node.kind === "decision");
+    const branches = decision ? flowchart.edges.filter(edge => edge.from === decision.id).map(edge => edge.to) : [];
+    if (branches.length > 1) lines.push(`  { rank=same; ${branches.join("; ")}; }`);
+  }
+  if (template.id === "uml_software_architecture") {
+    const childrenByParent = new Map();
+    flowchart.edges.forEach(edge => childrenByParent.set(edge.from, [...(childrenByParent.get(edge.from) || []), edge.to]));
+    for (const children of childrenByParent.values()) {
+      if (children.length > 1) lines.push(`  { rank=same; ${children.join("; ")}; }`);
+    }
+  }
 
   for (const edge of flowchart.edges) {
     const edgeAttributes = [];
@@ -80,7 +101,8 @@ function buildFlowchartDot(input, { wrapLabels = true, ranksepMultiplier = FLOWC
     const fromIndex = flowchart.nodes.findIndex(node => node.id === edge.from);
     const toIndex = flowchart.nodes.findIndex(node => node.id === edge.to);
     if (template.id === "pid_control_system" && edge.from === flowchart.nodes.find(node => node.kind === "sensor")?.id) {
-      edgeAttributes.push('constraint=false', 'minlen=2', 'color="#A15C45"');
+      // In a left-to-right feedback cycle, Graphviz places the rendered arrowhead at the sensor end unless reversed explicitly.
+      edgeAttributes.push('constraint=false', 'minlen=2', 'color="#A15C45"', 'tailport=s', 'headport=s', 'dir=back');
     } else if (template.id === "algorithm_flowchart" && toIndex <= fromIndex) {
       edgeAttributes.push('constraint=false', 'minlen=2');
     }
@@ -172,8 +194,8 @@ async function renderFlowchart(input) {
   const scale = Math.min(520 / metadata.width, 620 / metadata.height, 1);
   return {
     buf: normalizedPng,
-    width: Math.max(1, Math.round(metadata.width * scale)),
-    height: Math.max(1, Math.round(metadata.height * scale)),
+    width: Math.max(1, Number((metadata.width * scale).toFixed(6))),
+    height: Math.max(1, Number((metadata.height * scale).toFixed(6))),
   };
 }
 

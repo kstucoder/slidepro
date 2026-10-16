@@ -52,8 +52,9 @@ function rangeIncludingZero(values, padding = 0.05) {
   return { min, max };
 }
 
+// Figure titles are intentionally omitted; the DOCX caption names each chart.
 // --- Bar chart ---
-function barSVG({ labels, values, title = "", unit = "" }) {
+function barSVG({ labels, values, unit = "" }) {
   const W = 600, PL = 65, PR = 20, PT = 50;
   const n = labels.length;
   const step = (W - PL - PR) / n;
@@ -91,7 +92,6 @@ function barSVG({ labels, values, title = "", unit = "" }) {
     ticks += `<text x="${PL - 8}" y="${y}" dy="4" text-anchor="end" font-size="10" fill="#777">${tickText(value)}</text>`;
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="Times New Roman, Liberation Serif, serif">
-  <text x="${W / 2}" y="28" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">${esc(title)}</text>
   ${unit ? `<text x="${PL - 10}" y="${PT - 8}" text-anchor="middle" font-size="10" fill="#999">${esc(unit)}</text>` : ""}
   <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT + cH}" stroke="#999" stroke-width="1.2"/>
   <line x1="${PL}" y1="${y0.toFixed(1)}" x2="${W - PR}" y2="${y0.toFixed(1)}" stroke="#777" stroke-width="1.2"/>
@@ -100,7 +100,7 @@ function barSVG({ labels, values, title = "", unit = "" }) {
 }
 
 // --- Line chart ---
-function lineSVG({ labels, values, title = "", unit = "" }) {
+function lineSVG({ labels, values, unit = "" }) {
   const W = 600, PL = 65, PR = 30, PT = 50;
   const xStep = (W - PL - PR) / (labels.length - 1);
   const maxLabelChars = Math.max(4, Math.floor(xStep * 0.72 / 5.4));
@@ -126,7 +126,6 @@ function lineSVG({ labels, values, title = "", unit = "" }) {
     ticks += `<text x="${PL - 8}" y="${y}" dy="4" text-anchor="end" font-size="10" fill="#777">${tickText(value)}</text>`;
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="Times New Roman, Liberation Serif, serif">
-  <text x="${W / 2}" y="28" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">${esc(title)}</text>
   ${unit ? `<text x="${PL - 10}" y="${PT - 8}" text-anchor="middle" font-size="10" fill="#999">${esc(unit)}</text>` : ""}
   <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT + cH}" stroke="#999" stroke-width="1.2"/>
   <line x1="${PL}" y1="${PT + cH}" x2="${W - PR}" y2="${PT + cH}" stroke="#999" stroke-width="1.2"/>
@@ -135,7 +134,7 @@ function lineSVG({ labels, values, title = "", unit = "" }) {
 }
 
 // --- Pie chart ---
-function pieSVG({ labels, values, title = "" }) {
+function pieSVG({ labels, values }) {
   const W = 580, H = 300, cx = 180, cy = 150, r = 120;
   const total = values.reduce((sum, value) => sum + value, 0);
   let angle = -Math.PI / 2, slices = "", legend = "";
@@ -161,20 +160,19 @@ function pieSVG({ labels, values, title = "" }) {
     angle += delta;
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="Times New Roman, Liberation Serif, serif">
-  <text x="${W / 2}" y="24" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">${esc(title)}</text>
   ${slices}${legend}
 </svg>`;
 }
 
 async function renderChart(chart) {
-  const { chartType, labels, values, title, unit, caption } = normalizeChartData(chart);
+  const { chartType, labels, values, title, unit } = normalizeChartData(chart);
   if (["mathematical_graph", "experiment_results"].includes(chart.diagram_type)) {
     return renderMatplotlibChart({ ...chart, chartType, labels, values, title, unit });
   }
   let svg, width, height;
-  if (chartType === "line") { svg = lineSVG({ labels, values, title: title || caption || "", unit }); width = 600; height = 320; }
-  else if (chartType === "pie") { svg = pieSVG({ labels, values, title: title || caption || "" }); width = 580; height = 300; }
-  else if (chartType === "bar") { svg = barSVG({ labels, values, title: title || caption || "", unit }); width = 600; height = 360; }
+  if (chartType === "line") { svg = lineSVG({ labels, values, unit }); width = 600; height = 320; }
+  else if (chartType === "pie") { svg = pieSVG({ labels, values }); width = 580; height = 300; }
+  else if (chartType === "bar") { svg = barSVG({ labels, values, unit }); width = 600; height = 360; }
   else throw new Error(`chart: noma'lum tur (${chartType})`);
   width = Number(svg.match(/\bwidth="(\d+)"/)?.[1]) || width;
   height = Number(svg.match(/\bheight="(\d+)"/)?.[1]) || height;
@@ -188,4 +186,4 @@ async function renderChart(chart) {
   return { buf, width: displayWidth, height: displayHeight };
 }
 
-module.exports = { renderChart, wrapLabelLines, barSVG, lineSVG };
+module.exports = { renderChart, wrapLabelLines, barSVG, lineSVG, pieSVG };

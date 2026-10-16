@@ -201,8 +201,10 @@ function imageBlock(media, caption, { maxPageFraction = 0.6 } = {}) {
   const scale = maxPageFraction
     ? Math.min(1, A4_PAGE_WIDTH_PX * maxPageFraction / w, A4_PAGE_HEIGHT_PX * maxPageFraction / h)
     : 1;
-  const imageWidth = Math.max(1, Math.floor(w * scale));
-  const imageHeight = Math.max(1, Math.floor(h * scale));
+  const maxWidth = maxPageFraction ? Math.floor(A4_PAGE_WIDTH_PX * maxPageFraction) : Infinity;
+  const maxHeight = maxPageFraction ? Math.floor(A4_PAGE_HEIGHT_PX * maxPageFraction) : Infinity;
+  const imageWidth = Math.max(1, Math.min(maxWidth, Math.round(w * scale)));
+  const imageHeight = Math.max(1, Math.min(maxHeight, Math.round(h * scale)));
   const nodes = [];
   nodes.push(new Paragraph({
     children: [new ImageRun({ data: buf, transformation: { width: imageWidth, height: imageHeight }, type: "png" })],

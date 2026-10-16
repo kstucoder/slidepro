@@ -13,6 +13,97 @@ const { buildFlowchartDot } = require("../src/mustaqil/flowchart");
 const { normalizeChartData, safeMathExpression } = require("../src/mustaqil/chart-data");
 const { renderChart } = require("../src/mustaqil/chart");
 
+function graphvizLayout(flowchart) {
+  const rendered = spawnSync("dot", ["-Tjson"], { input: buildFlowchartDot(flowchart), maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(rendered.status, 0, rendered.stderr?.toString("utf8"));
+  return JSON.parse(rendered.stdout.toString("utf8"));
+}
+
+function graphvizTextRects(object) {
+  const fontSize = Number(object._ldraw_?.find(draw => draw.op === "F")?.size || object.fontsize || 12);
+  return (object._ldraw_ || []).filter(draw => draw.op === "T").map(draw => {
+    const [x, y] = draw.pt;
+    const halfWidth = Number(draw.width) / 2 + 2;
+    return { left: x - halfWidth, right: x + halfWidth, bottom: y - fontSize / 2 - 2, top: y + fontSize / 2 + 2 };
+  });
+}
+
+function graphvizSplineSamples(edge, steps = 24) {
+  const samples = [];
+  for (const draw of (edge._draw_ || []).filter(item => item.op === "b")) {
+    const points = draw.points;
+    if (points.length >= 4 && (points.length - 1) % 3 === 0) {
+      for (let start = 0; start + 3 < points.length; start += 3) {
+        const [p0, p1, p2, p3] = points.slice(start, start + 4);
+        for (let index = 0; index <= steps; index++) {
+          const t = index / steps;
+          const u = 1 - t;
+          samples.push({
+            x: u ** 3 * p0[0] + 3 * u ** 2 * t * p1[0] + 3 * u * t ** 2 * p2[0] + t ** 3 * p3[0],
+            y: u ** 3 * p0[1] + 3 * u ** 2 * t * p1[1] + 3 * u * t ** 2 * p2[1] + t ** 3 * p3[1],
+          });
+        }
+      }
+    }
+  }
+  return samples;
+}
+
+function graphvizLabelsAndRoutesAreClear(layout) {
+  assert.equal(graphvizTextRects(layout).length, 0, "Graphviz rasmida alohida sarlavha bo‘lmasin");
+  const nodeObjects = layout.objects.filter(object => object.pos);
+  const nodeRects = nodeObjects.flatMap(graphvizTextRects);
+  const nodesByGvid = new Map(nodeObjects.map(node => [node._gvid, node]));
+  const protectedText = nodeRects;
+  const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.bottom < b.top && a.top > b.bottom;
+
+  for (const edge of layout.edges) {
+    const route = graphvizSplineSamples(edge);
+    assert.ok(route.length > 0, `Graphviz spline ${edge.tail}→${edge.head} mavjud bo‘lsin`);
+    const arrow = [...(edge._hdraw_ || []), ...(edge._tdraw_ || [])].find(draw => (draw.op === "P" || draw.op === "p") && draw.points?.length);
+    assert.ok(arrow, `Graphviz strelkasi ${edge.tail}→${edge.head} chizilsin`);
+    const arrowCenter = arrow.points.reduce((center, point) => [center[0] + point[0] / arrow.points.length, center[1] + point[1] / arrow.points.length], [0, 0]);
+    const endpointDistance = node => {
+      const [x, y] = node.pos.split(",").map(Number);
+      return Math.hypot(arrowCenter[0] - x, arrowCenter[1] - y);
+    };
+    assert.ok(endpointDistance(nodesByGvid.get(edge.head)) < endpointDistance(nodesByGvid.get(edge.tail)),
+      `strelka ${edge.tail}→${edge.head} haqiqiy target tugunga qarasin`);
+    for (const point of route) {
+      for (const textRect of protectedText) {
+        assert.ok(point.x < textRect.left || point.x > textRect.right || point.y < textRect.bottom || point.y > textRect.top,
+          `o‘q ${edge.tail}→${edge.head} (${point.x.toFixed(2)},${point.y.toFixed(2)}) tugun yozuvi qutisiga tegmasin: ${JSON.stringify(textRect)}`);
+      }
+    }
+    const edgeLabelRects = graphvizTextRects(edge);
+    for (const labelRect of edgeLabelRects) {
+      for (const textRect of protectedText) {
+        assert.ok(!overlaps(labelRect, textRect), `qirra yozuvi ${edge.tail}→${edge.head} tugun yozuvi bilan ustma-ust tushmasin`);
+      }
+    }
+  }
+
+  for (let first = 0; first < layout.edges.length; first++) {
+    const a = layout.edges[first];
+    const aEnds = new Set([a.tail, a.head]);
+    const aPoints = graphvizSplineSamples(a);
+    for (let second = first + 1; second < layout.edges.length; second++) {
+      const b = layout.edges[second];
+      if ([b.tail, b.head].some(node => aEnds.has(node))) continue;
+      const bPoints = graphvizSplineSamples(b);
+      for (let i = 1; i < aPoints.length; i++) {
+        for (let j = 1; j < bPoints.length; j++) {
+          const p = aPoints[i - 1], q = aPoints[i], r = bPoints[j - 1], s = bPoints[j];
+          const orient = (x1, y1, x2, y2, x3, y3) => (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
+          const crosses = orient(p.x, p.y, q.x, q.y, r.x, r.y) * orient(p.x, p.y, q.x, q.y, s.x, s.y) < -0.01
+            && orient(r.x, r.y, s.x, s.y, p.x, p.y) * orient(r.x, r.y, s.x, s.y, q.x, q.y) < -0.01;
+          assert.equal(crosses, false, `bog‘liq bo‘lmagan o‘qlar ${a.tail}→${a.head} va ${b.tail}→${b.head} kesishmasin`);
+        }
+      }
+    }
+  }
+}
+
 const algorithm = {
   diagram_type: "algorithm_flowchart",
   title: "Suv sifatini tekshirish algoritmi",
@@ -37,7 +128,7 @@ const pid = {
   title: "PID yopiq boshqaruv konturi",
   nodes: [
     { id: "ref", label: "Topshiriq signali", kind: "input" },
-    { id: "sum", label: "Xatolik yig'indisi", kind: "sum" },
+    { id: "sum", label: "Σ", kind: "sum" },
     { id: "pid", label: "PID rostlagich", kind: "controller" },
     { id: "plant", label: "Boshqaruv obyekti", kind: "plant" },
     { id: "sensor", label: "O'lchov datchigi", kind: "sensor" },
@@ -61,6 +152,7 @@ test("mavzu semantikasi yetti nomlangan diagramma turiga yo‘naltiriladi", () =
   assert.equal(classifyGraphvizType({ topic: "Boshqaruv tizimi PID Graphviz" }), "pid_control_system");
   assert.equal(classifyGraphvizType({ topic: "UML va dastur arxitekturasi Graphviz" }), "uml_software_architecture");
   assert.equal(classifyGraphvizType({ topic: "Jarayonlar ketma-ketligi Graphviz" }), "process_sequence");
+  assert.equal(classifyGraphvizType({ planTitle: "Inqirozni erta aniqlash va javob choralarini tanlash", purpose: "indikatorlar asosida siyosat paketini bosqichma-bosqich tanlash" }), "process_sequence");
   assert.equal(classifyGraphvizType({ topic: "Suvni tozalash jarayoni" }), "functional_block_diagram");
   assert.equal(classifyGraphvizType({ topic: "UML arxitekturasi", diagram_type: "process_sequence" }), "process_sequence");
   assert.equal(classifyMatplotlibType({ topic: "Matematik grafiklar" }), "mathematical_graph");
@@ -79,6 +171,19 @@ test("algoritm flowchart standart belgilar va Ha/Yo‘q shoxlarini talab qiladi"
   assert.match(dot, /Times New Roman/);
   assert.throws(() => normalizeFlowchartData({ ...algorithm, edges: algorithm.edges.map(edge => edge.from === "check" && edge.label === "Yo'q" ? { ...edge, label: "Balki" } : edge) }), /Ha va Yo'q/);
   assert.throws(() => normalizeFlowchartData({ ...algorithm, nodes: algorithm.nodes.map(node => node.kind === "start" ? { ...node, kind: "process" } : node) }), /bittadan start va end/);
+  assert.throws(() => normalizeFlowchartData({ ...algorithm, edges: [...algorithm.edges, { from: "end", to: "start" }] }), /startga kiruvchi qirra bo'lmasin/);
+  assert.throws(() => normalizeFlowchartData({ ...algorithm, edges: [
+    { from: "start", to: "measure" }, { from: "measure", to: "check" },
+    { from: "check", to: "measure", label: "Ha" }, { from: "check", to: "end", label: "Yo'q" },
+    { from: "treat", to: "end" },
+  ] }), /barcha tugunlar startdan yetib boriladigan/);
+  const repeatLoop = {
+    diagram_type: "algorithm_flowchart", title: "O‘lchovni takrorlash algoritmi",
+    nodes: [{ id: "start", label: "Boshlash", kind: "start" }, { id: "measure", label: "Suvni o‘lchash", kind: "process" }, { id: "check", label: "Mezon mosmi", kind: "decision" }, { id: "end", label: "Yakunlash", kind: "end" }],
+    edges: [{ from: "start", to: "measure" }, { from: "measure", to: "check" }, { from: "check", to: "measure", label: "Ha" }, { from: "check", to: "end", label: "Yo‘q" }],
+  };
+  assert.doesNotThrow(() => normalizeFlowchartData(repeatLoop), "to‘g‘ri shartli qaytish sikli algoritmda ruxsat etiladi");
+  graphvizLabelsAndRoutesAreClear(graphvizLayout(repeatLoop));
 });
 
 test("PID Graphviz modeli besh blok va haqiqiy sensor teskari aloqasini talab qiladi", () => {
@@ -89,6 +194,7 @@ test("PID Graphviz modeli besh blok va haqiqiy sensor teskari aloqasini talab qi
   assert.match(dot, /constraint=false/);
   assert.match(dot, /Times New Roman/);
   assert.throws(() => normalizeFlowchartData({ ...pid, edges: pid.edges.map(edge => edge.from === "sensor" ? { ...edge, to: "pid" } : edge) }), /PID signal path/);
+  assert.throws(() => normalizeFlowchartData({ ...pid, nodes: pid.nodes.map(node => node.kind === "sum" ? { ...node, label: "Xatolik yig'indisi" } : node) }), /doirasiga sig'adigan ixcham/);
   assert.throws(() => normalizeFlowchartData({ ...pid, nodes: pid.nodes.slice(0, 4) }), /aynan 5 ta node/);
 });
 
@@ -100,6 +206,8 @@ test("jarayon ketma-ketligi oldinga, UML esa arxitektura elementlari bilan quril
   };
   assert.match(buildFlowchartDot(sequence), /rankdir=LR/);
   assert.throws(() => normalizeFlowchartData({ ...sequence, edges: [{ from: "b", to: "a" }, { from: "b", to: "c" }] }), /chapdan o'ngga/);
+  assert.throws(() => normalizeFlowchartData({ ...sequence, edges: [...sequence.edges, { from: "a", to: "c" }] }), /faqat bevosita keyingi tugunga/);
+  assert.throws(() => normalizeFlowchartData({ ...sequence, edges: [{ from: "a", to: "b" }] }), /faqat bevosita keyingi tugunga/);
   const uml = {
     diagram_type: "uml_software_architecture", title: "Dastur komponentlari",
     nodes: [{ id: "api", label: "API komponenti", kind: "component" }, { id: "service", label: "Domen klassi", kind: "class" }, { id: "db", label: "Ma'lumotlar ombori", kind: "database" }],
@@ -107,7 +215,59 @@ test("jarayon ketma-ketligi oldinga, UML esa arxitektura elementlari bilan quril
   };
   assert.match(buildFlowchartDot(uml), /shape=component/);
   assert.match(buildFlowchartDot(uml), /rankdir=TB/);
+  const umlWithActor = {
+    ...uml,
+    nodes: [{ id: "api", label: "API komponenti", kind: "component" }, { id: "actor", label: "Operator", kind: "actor" }, { id: "service", label: "Domen klassi", kind: "class" }, { id: "db", label: "Ma'lumotlar ombori", kind: "database" }],
+    edges: [{ from: "api", to: "actor", label: "uses" }, { from: "api", to: "service", label: "calls" }, { from: "service", to: "db", label: "reads" }],
+  };
+  const actorDot = buildFlowchartDot(umlWithActor);
+  assert.ok(actorDot.includes('label="«actor»\\nOperator", shape=box'), "UML actor stereotype and classifier rectangle distinguish it from a use-case ellipse");
+  graphvizLabelsAndRoutesAreClear(graphvizLayout(umlWithActor));
   assert.throws(() => normalizeFlowchartData({ ...uml, nodes: uml.nodes.map(node => ({ ...node, kind: "process" })) }), /mos bo'lmagan node turi/);
+});
+
+test("uzluksiz jarayon zanjiri sarlavhasiz bo‘lib, o‘qlari tugunlar orasida va kesishuvsiz qoladi", () => {
+  const sequence = {
+    diagram_type: "process_sequence", title: "Inqirozni erta aniqlash va javob choralarini tanlash",
+    nodes: [
+      { id: "indicators", label: "Indikatorlar", kind: "step" },
+      { id: "risk", label: "Risk baholash", kind: "step" },
+      { id: "policy", label: "Siyosat tanlash", kind: "step" },
+      { id: "action", label: "Boshqaruv chorasi", kind: "step" },
+      { id: "monitoring", label: "Monitoring", kind: "step" },
+    ],
+    edges: [
+      { from: "indicators", to: "risk" }, { from: "risk", to: "policy" },
+      { from: "policy", to: "action" }, { from: "action", to: "monitoring" },
+    ],
+  };
+  const rendered = spawnSync("dot", ["-Tjson"], { input: buildFlowchartDot(sequence), maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(rendered.status, 0, rendered.stderr?.toString("utf8"));
+  const layout = JSON.parse(rendered.stdout.toString("utf8"));
+  assert.equal(layout.label, undefined, "diagramma sarlavhasi alohida rasmda chiqmasin");
+  const byId = new Map(layout.objects.map(node => [node.name, node]));
+  const ordered = sequence.nodes.map(node => byId.get(node.id));
+  const x = node => Number(node.pos.split(",")[0]);
+  assert.ok(ordered.every((node, index) => index === 0 || x(ordered[index - 1]) < x(node)), "tugunlar chapdan o‘ngga qat’iy tartibda qoladi");
+  assert.equal(layout.edges.length, sequence.nodes.length - 1, "faqat qo‘shni bosqichlarni ulaydigan qirralar bo‘lsin");
+
+  const nodesByGvid = new Map(layout.objects.map(node => [node._gvid, node]));
+  const routes = layout.edges.map(edge => {
+    const points = edge.pos.trim().split(/\s+/).map(point => point.replace(/^[se],/, "").split(",").map(Number));
+    assert.ok(points.length >= 2 && points.every(point => point.length === 2 && point.every(Number.isFinite)), "har bir Graphviz qirrasi koordinatalarga ega");
+    const source = nodesByGvid.get(edge.tail);
+    const target = nodesByGvid.get(edge.head);
+    const sourceRight = x(source) + Number(source.width) * 36;
+    const targetLeft = x(target) - Number(target.width) * 36;
+    const xs = points.map(point => point[0]);
+    const ys = points.map(point => point[1]);
+    assert.ok(Math.min(...xs) >= sourceRight - 1 && Math.max(...xs) <= targetLeft + 1, "o‘q source/target label qutilaridan tashqaridagi bo‘sh yo‘lakda qoladi");
+    assert.ok(Math.max(...ys) - Math.min(...ys) < 0.1, "ketma-ketlik o‘qlari bir xil qatorda, diagonal va kesishuvsiz qoladi");
+    return [Math.min(...xs), Math.max(...xs)];
+  });
+  for (let index = 1; index < routes.length; index++) {
+    assert.ok(routes[index - 1][1] <= routes[index][0] + 1, "qo‘shni o‘qlar oralig‘i tartib bo‘yicha ajralgan, o‘zaro kesishmaydi");
+  }
 });
 
 test("IPO va sabab–oqibat Graphviz sxemalari besh tugun ichida semantik joylashadi", () => {
@@ -141,6 +301,76 @@ test("IPO va sabab–oqibat Graphviz sxemalari besh tugun ichida semantik joylas
   const rendered = spawnSync("dot", ["-Tpng"], { input: causeDot, maxBuffer: 4 * 1024 * 1024 });
   assert.equal(rendered.status, 0, rendered.stderr?.toString("utf8"));
   assert.equal(rendered.stdout.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+});
+
+test("algoritm, PID, sabab–oqibat va UML layoutlari yozuvlarni bosmay, mazmuniy qatorlarni saqlaydi", () => {
+  const causeEffect = {
+    diagram_type: "functional_block_diagram", title: "Suv sifatiga ta’sir qiluvchi omillar",
+    nodes: [
+      { id: "method", label: "Filtrlash usuli", kind: "input" },
+      { id: "source", label: "Xom suv manbai", kind: "input" },
+      { id: "load", label: "Ishlab chiqarish yuki", kind: "input" },
+      { id: "sampling", label: "Namuna olish", kind: "input" },
+      { id: "quality", label: "Suv sifati", kind: "output" },
+    ],
+    edges: [
+      { from: "method", to: "quality" }, { from: "source", to: "quality" },
+      { from: "load", to: "quality" }, { from: "sampling", to: "quality" },
+    ],
+  };
+  const uml = {
+    diagram_type: "uml_software_architecture", title: "Suv nazorati dastur modullari",
+    nodes: [
+      { id: "root", label: "Nazorat komponenti", kind: "component" },
+      { id: "service", label: "Sifat xizmati", kind: "class" },
+      { id: "interface", label: "Sensor interfeysi", kind: "interface" },
+      { id: "database", label: "O‘lchovlar ombori", kind: "database" },
+    ],
+    edges: [
+      { from: "root", to: "service", label: "calls" },
+      { from: "root", to: "interface", label: "reads" },
+      { from: "service", to: "database", label: "writes" },
+    ],
+  };
+  const cases = [
+    ["algorithm", algorithm], ["pid", pid], ["cause-effect", causeEffect], ["uml", uml],
+  ];
+  const layouts = new Map();
+  for (const [name, flowchart] of cases) {
+    const layout = graphvizLayout(flowchart);
+    graphvizLabelsAndRoutesAreClear(layout);
+    layouts.set(name, layout);
+  }
+
+  const nodes = layout => new Map(layout.objects.filter(object => object.pos).map(object => [object.name, object]));
+  const algorithmNodes = nodes(layouts.get("algorithm"));
+  assert.ok(Math.abs(Number(algorithmNodes.get("treat").pos.split(",")[1]) - Number(algorithmNodes.get("end").pos.split(",")[1])) < 0.1,
+    "Ha/Yo‘q qaror shoxlari bir xil qatorda joylashadi");
+  const pidLayout = layouts.get("pid");
+  const pidNodes = nodes(pidLayout);
+  const pidRows = [...pidNodes.values()].map(node => Number(node.pos.split(",")[1]));
+  assert.ok(Math.max(...pidRows) - Math.min(...pidRows) < 0.1, "PID oldinga signal yo‘li bitta gorizontal qatorda qoladi");
+  const feedback = pidLayout.edges.find(edge => edge.label === "Teskari aloqa");
+  const feedbackSamples = graphvizSplineSamples(feedback);
+  const sensor = pidNodes.get("sensor");
+  const sensorY = Number(sensor.pos.split(",")[1]);
+  assert.ok(Math.max(...feedbackSamples.map(point => point.y)) <= sensorY - Number(sensor.height) * 36 + 1,
+    "PID teskari aloqa barcha bloklar ostidan alohida qaytadi");
+
+  const causeNodes = nodes(layouts.get("cause-effect"));
+  const causeX = causeEffect.nodes.slice(0, -1).map(node => Number(causeNodes.get(node.id).pos.split(",")[0]));
+  assert.ok(Math.max(...causeX) - Math.min(...causeX) < 0.1, "sabablar bitta tartibli ustunda turadi");
+  assert.ok(Number(causeNodes.get("quality").pos.split(",")[0]) > Math.max(...causeX), "yagona natija sabablar ustunining yonida joylashadi");
+
+  const umlNodes = nodes(layouts.get("uml"));
+  const rootY = Number(umlNodes.get("root").pos.split(",")[1]);
+  const siblingRows = ["service", "interface"].map(id => Number(umlNodes.get(id).pos.split(",")[1]));
+  assert.ok(Math.abs(siblingRows[0] - siblingRows[1]) < 0.1 && rootY > Math.max(...siblingRows),
+    "UML ildiz yuqorida, bevosita quyi modullar bitta qatorda turadi");
+
+  assert.throws(() => normalizeFlowchartData({ ...pid, edges: [...pid.edges, { from: "ref", to: "plant" }] }), /PID signal path/);
+  assert.throws(() => normalizeFlowchartData({ ...uml, edges: [...uml.edges, { from: "root", to: "database" }] }), /daraxt bo'lsin/);
+  assert.throws(() => normalizeFlowchartData({ ...causeEffect, edges: [...causeEffect.edges, { from: "method", to: "source" }] }), /faqat input→process→output zanjiri/);
 });
 
 test("Matplotlib chart schemalari matematik ifoda va beshtagacha tajriba seriyasini tekshiradi", () => {
@@ -190,4 +420,17 @@ test("Matplotlib matematik va eksperimental PNG’larni chizadi", async () => {
     assert.ok(image.width > 0 && image.height > 0);
     assert.ok(Math.abs(image.width / image.height - metadata.width / metadata.height) < 0.01);
   }
+  const titleProbe = spawnSync("python3", ["-c", `
+import importlib.util, json, sys
+import matplotlib.pyplot as plt
+spec = importlib.util.spec_from_file_location("matplotlib_renderer", sys.argv[1])
+renderer = importlib.util.module_from_spec(spec)
+sys.dont_write_bytecode = True
+spec.loader.exec_module(renderer)
+for data in json.load(sys.stdin):
+    figure, axes = renderer.build_figure(data)
+    assert axes.get_title() == "", "diagram title belongs in the DOCX caption, not inside the image"
+    plt.close(figure)
+`, require("node:path").resolve(__dirname, "../src/mustaqil/matplotlib-renderer.py")], { input: JSON.stringify(cases) });
+  assert.equal(titleProbe.status, 0, titleProbe.stderr.toString("utf8"));
 });

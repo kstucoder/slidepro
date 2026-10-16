@@ -324,7 +324,7 @@ function fallbackFlowchart(plan, chapter, language, index) {
   } else if (diagramType === "pid_control_system") {
     nodes = [
       { id: "reference", label: "Topshiriq signali", kind: "input" },
-      { id: "sum", label: "Xatolik yig‘indisi", kind: "sum" },
+      { id: "sum", label: "Σ", kind: "sum" },
       { id: "pid", label: "PID rostlagich", kind: "controller" },
       { id: "plant", label: "Boshqaruv obyekti", kind: "plant" },
       { id: "sensor", label: "O‘lchov datchigi", kind: "sensor" },
