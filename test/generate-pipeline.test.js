@@ -201,9 +201,8 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
     assert.ok(slotRequests.every(prompt => /status yorlig'i qo'shma|status yorliqlarini ishlatma/i.test(prompt)), "media promptlari captionlarda status/disclosure yorlig'ini taqiqlasin");
     const flowchartRequests = slotRequests.filter(prompt => prompt.includes('"type":"flowchart"'));
     assert.equal(flowchartRequests.length, 2, "har bir rejalashtirilgan Graphviz sloti alohida prompt oladi");
-    const selectedTemplates = flowchartRequests.map(prompt => prompt.match(/Tanlangan va o‘zgarmas shablon: ([A-Za-z0-9_]+)/)?.[1]);
-    assert.ok(selectedTemplates.every(Boolean), "har bir Graphviz promptida template ID ko'rsatiladi");
-    assert.equal(new Set(selectedTemplates).size, flowchartRequests.length, "bir hujjatdagi Graphviz shablonlari takrorlanmaydi");
+    const selectedTypes = flowchartRequests.map(prompt => prompt.match(/Tanlangan va o‘zgarmas diagram_type: ([A-Za-z0-9_]+)/)?.[1]);
+    assert.ok(selectedTypes.every(type => ["functional_block_diagram", "algorithm_flowchart", "pid_control_system", "uml_software_architecture", "process_sequence"].includes(type)), "har bir Graphviz promptida mavzuga mos semantic diagram_type ko'rsatiladi");
     assert.ok(flowchartRequests.every(prompt => /Avtomatik boshqaruv tizimlari/.test(prompt) && /bob|Reja:/i.test(prompt)), "Graphviz so'rovlari hujjat mavzusi va bob rejasi bilan boyitiladi");
     assert.equal(new Set(slotRequests.map(prompt => prompt.match(/Slot ID: ([^\s.]+)/)?.[1])).size, 6);
     assert.equal(mediaAttempts.get("ch1:formula:1"), 2, "yaroqsiz LaTeX rejaga mos kelmagani uchun aynan shu slot qayta olinadi");

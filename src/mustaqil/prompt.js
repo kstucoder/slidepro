@@ -11,6 +11,8 @@
 const { normalizeHeadingTitle } = require("./headings");
 const { MIN_DIAGRAM_COUNT, resolveDiagramQuotas, resolveFormulaQuota } = require("./media-requirements");
 const { buildFlowchartCaption } = require("./flowchart-data");
+const { classifyGraphvizType, classifyMatplotlibType } = require("./diagram-types");
+const { getFlowchartTemplate } = require("./flowchart-templates");
 // The final rendered DOCX measured 274.9 words/page (median 281) across seven full image-free pages.
 // Use 265 as a conservative target after excluding cover, outline, media pages, and spill pages.
 const WORDS_PER_PAGE = 265;
@@ -91,7 +93,7 @@ function fallbackMainTitle(topic, index) {
   return `${String(topic || "Mavzu").trim()}: ${MAIN_ASPECTS[index % MAIN_ASPECTS.length]}`;
 }
 
-function defaultFlowchartPlan(topic, ordinal, language = "o'zbek") {
+function defaultFlowchartPlan(topic, ordinal, language = "o'zbek", chapterTitle = "") {
   const subject = String(topic || "Mavzu").trim();
   let plan;
   if (ordinal === 0) {
@@ -105,6 +107,7 @@ function defaultFlowchartPlan(topic, ordinal, language = "o'zbek") {
       purpose: `${subject} bo'yicha asosiy omillar, tarkibiy qismlar va natijalar orasidagi sodda aloqalarni ko'rsatish`,
     };
   }
+  plan.diagram_type = classifyGraphvizType({ topic: subject, chapterTitle, planTitle: plan.title, purpose: plan.purpose });
   plan.caption = buildFlowchartCaption(plan, plan.purpose, language);
   return plan;
 }
@@ -149,9 +152,10 @@ function normalizeOutlineForPages(outline, { pages, topic, language, studentName
     const requested = Math.max(Number(chapter.flowchart_count) || 0, sourcePlans.length);
     if (requested <= 0) return;
     const sourcePlan = sourcePlans.find(flowchart => flowchart && typeof flowchart === "object" && flowchart.title);
-    const selectedPlan = sourcePlan || defaultFlowchartPlan(topic || chapter.title, flowchartAssignments.size, language);
+    const selectedPlan = sourcePlan || defaultFlowchartPlan(topic || chapter.title, flowchartAssignments.size, language, chapter.title);
     flowchartAssignments.set(index, {
       ...selectedPlan,
+      diagram_type: selectedPlan.diagram_type || classifyGraphvizType({ topic, chapterTitle: chapter.title, planTitle: selectedPlan.title, purpose: selectedPlan.purpose }),
       caption: selectedPlan.caption || buildFlowchartCaption(selectedPlan, selectedPlan.purpose, language),
     });
   });
@@ -163,7 +167,7 @@ function normalizeOutlineForPages(outline, { pages, topic, language, studentName
       .sort((left, right) => right.score - left.score);
     if (!candidates.length) break;
     const { chapter, index } = candidates[0];
-    flowchartAssignments.set(index, defaultFlowchartPlan(topic || chapter.title, ordinal, language));
+    flowchartAssignments.set(index, defaultFlowchartPlan(topic || chapter.title, ordinal, language, chapter.title));
   }
   const fixedFormulaPlans = (Array.isArray(formulaPlans) ? formulaPlans : [])
     .filter(formula => (typeof formula === "string" ? formula : formula?.latex)?.trim())
@@ -205,12 +209,24 @@ function normalizeOutlineForPages(outline, { pages, topic, language, studentName
     const chartType = explicitClassicTypes
       ? explicitClassicTypes[ordinal]
       : (["bar", "line", "pie"].includes(candidate.chapter.chart_type) ? candidate.chapter.chart_type : fallbackTypes[ordinal % fallbackTypes.length]);
-    chartAssignments.set(candidate.index, {
-      plan: fixedChartPlans[ordinal] || sourceChart || {
+    const chartPlan = fixedChartPlans[ordinal] || sourceChart || {
         title: `${candidate.chapter.title || fallbackMainTitle(topic, candidate.index)}: asosiy ko'rsatkichlar`,
         variable: `${topic || candidate.chapter.title || "Mavzu"} bo'yicha tahliliy ko'rsatkichlar`,
-      },
-      chartType,
+      };
+    const diagramType = classifyMatplotlibType({
+      topic,
+      chapterTitle: candidate.chapter.title,
+      planTitle: chartPlan.title,
+      variable: chartPlan.variable,
+      diagram_type: chartPlan.diagram_type,
+    });
+    const resolvedChartType = diagramType === "mathematical_graph" ? "line"
+      : diagramType === "experiment_results" && !["bar", "line"].includes(chartType) ? "bar"
+        : chartType;
+    chartAssignments.set(candidate.index, {
+      plan: diagramType ? { ...chartPlan, diagram_type: diagramType, chartType: resolvedChartType } : chartPlan,
+      chartType: resolvedChartType,
+      diagramType,
     });
   }
   const usedMainTitles = new Set();
@@ -378,11 +394,11 @@ JSON strukturasida qaytargin:
       "chart_count": <0 yoki 1>,
       "chart_type": "<bar|line|pie>",
       "chart_plans": [
-        {"title": "<grafik sarlavhasi>", "variable": "<qaysi o'zgaruvchi/ma'lumot ko'rsatiladi вЂ” boshqa asosiy bo'limda xuddi shu ma'lumot ISHLATILMASIN>"}
+        {"diagram_type": "<mathematical_graph yoki experiment_results, faqat mazmunan mos bo'lsa>", "title": "<grafik sarlavhasi>", "variable": "<qaysi o'zgaruvchi/ma'lumot ko'rsatiladi вЂ” boshqa asosiy bo'limda xuddi shu ma'lumot ISHLATILMASIN>", "functions": [{"name":"f(x)","expression":"<matematik grafik uchun aniq funksiya>"}], "x_min": -5, "x_max": 5, "labels": ["<sinov sharti>"], "series": [{"name":"<seriya>","values":[<qiymatlar>]}], "unit": "<birlik>"}
       ],
       "flowchart_count": <0 yoki 1>,
       "flowchart_plans": [
-        {"title": "<oqim sxemasi sarlavhasi>", "purpose": "<bosqichlar yoki qarorlar oqimi nimani tushuntiradi>", "caption": "<sxema haqida qisqa o'zbekcha izoh>"}
+        {"diagram_type": "<functional_block_diagram|algorithm_flowchart|pid_control_system|uml_software_architecture|process_sequence>", "title": "<mazmunga mos sarlavha>", "purpose": "<sxema nimani tushuntiradi>", "caption": "<sxema haqida qisqa o'zbekcha izoh>"}
       ],
       "table_count": <0 yoki 1>,
       "sections": [
@@ -423,7 +439,7 @@ TUZILMA QOIDALARI:
 - Mavzuning matematik/miqdoriy darajasi bo'yicha butun ishga aynan ${requestedFormulas} ta formula, ${chartQuotaText} miqdoriy grafik, aynan ${requestedFlowcharts} ta Graphviz oqim sxemasi va ko'pi bilan 1 jadval rejalashtir; har bir asosiy bo'limga ko'pi bilan bittadan formula, grafik va oqim sxemasi ber. Formula sonini ushbu kvotaga mos to'liq rejalashtir, kamaytirma va tavsifiy mavzuga filler formula qo'shma.
 - Miqdoriy grafiklar va Graphviz oqim sxemalarining jami kamida ${MIN_DIAGRAM_COUNT} ta bo'lsin; bu uchta bilan cheklanadigan yuqori limit emas — mavzu va sahifa rejasi imkon bersa, undan ko'proq diagramma rejalashtir va chiqar.
 - Media bandlarini ko'pi bilan ${mediaSectionLimit} ta asosiy bo'limda jamla; formula va grafiklarni bir-biriga yaqin joylashtir, Kirish va Xulosada media ishlatma.
-- Jami aynan ${requestedFlowcharts} ta Graphviz sxemasi rejalashtir; ularni mazmunan eng mos asosiy bo'limlarga bittadan joylashtir. Har bir sxema boshqa jarayon yoki ko'rinishni tushuntirsin; Kirish va Xulosada sxema bo'lmasin.
+- Jami aynan ${requestedFlowcharts} ta Graphviz sxemasi rejalashtir; har biriga mavzu va bo'lim mazmuniga mos diagram_type ber: functional_block_diagram, algorithm_flowchart, pid_control_system, uml_software_architecture yoki process_sequence. Algoritm bo'lsa standart start/end/qaror belgilarini, PID bo'lsa yopiq teskari aloqani, UML bo'lsa haqiqiy komponent/klass munosabatlarini, jarayon ketma-ketligi bo'lsa chapdan o'ngga qadamlarni tanla; boshqa mavzuga mos bo'lmagan tur yoki generic chizma qo'llama. Har bir sxemada ko'pi bilan 5 ta tugun bo'lsin; Kirish va Xulosada sxema bo'lmasin.
 - Har asosiy bo'lim BOSHQA JIHATNI yoritsin: nazariy / amaliy / taqqoslov / prognoz
 - Sarlavhalarga strukturaviy yorliq yoki raqam prefiksi yozma — dastur raqamlarni o'zi qo'shadi.
 - Asosiy va ichki sarlavhalar lo'nda, faqat mazmunni ifodalovchi bo'lsin (odatda 3–10 so'z); kirish so'zlari, takroriy mavzu nomi va izohlarni sarlavhaga qo'shma.
@@ -466,6 +482,10 @@ GRAFIKLAR (butun ish bo'yicha ${chartQuotaText} ta; har asosiy bo'limda 0 yoki 1
   * Misol ch1: variable="yillar bo\'yicha harorat o\'zgarishi (В°C, 1990-2020)"
             ch2: variable="mintaqalar bo\'yicha yog\'ingarchilik miqdori (mm, 2023)"
   * Bu ikki variable hech qachon bir biriga o\'xshamaydi
+- Grafik matematik funksiya/equation bo'lsa diagram_type="mathematical_graph" deb belgila: Matplotlib chizadigan aniq funksiyalar va chegaralar keyingi media so'rovida beriladi.
+- Grafik tajriba, laboratoriya yoki kuzatuv natijasi bo'lsa diagram_type="experiment_results" deb belgila; Matplotlib bilan ko'pi bilan 5 ta taqqoslanadigan seriya chiziladi.
+- mathematical_graph uchun chart_plans'da kamida bitta aniq funksiya ifodasi va x_min/x_max ko'rsat; experiment_results uchun mazmunga oid label, birlik va nomlangan series'larni rejalashtir.
+- Matematik yoki tajriba mazmuni bo'lmasa, bu ikki diagram_type'dan birini sun'iy ravishda yozma; chartni faqat mavzu mazmuni haqiqiy miqdoriy taqqoslashga asos bersa rejalashtir.
 
 JADVALLAR: butun ish bo'yicha ko'pi bilan 1 ta, ixtiyoriy asosiy bo'lim uchun
 
@@ -614,14 +634,38 @@ function chapterUserPrompt(options) {
     ? `\n\nрџљ« TAKRORLANISHI MUMKIN BO'LMAGAN GRAFIK MA'LUMOTLAR (boshqa asosiy bo'limlarda allaqachon ko'rsatilgan):\n${usedCharts.map((c,i)=>`  ${i+1}. ${c}`).join("\n")}\n\nвљ пёЏ MUHIM: Yuqoridagi VARIABLE/MA'LUMOT TURINI ham ishlatma вЂ” sarlavha o'zgartirib ham bo'lmaydi.\nBIR XIL MA'LUMOTNI boshqa sarlavha bilan ko'rsatish ham TAKROR hisoblanadi.`
     : "";
 
-  // Chart type from outline
+  const chartPlan = Array.isArray(chapter.chart_plans) ? chapter.chart_plans[0] : null;
+  const chartDiagramType = classifyMatplotlibType({
+    topic: outline.meta?.title,
+    chapterTitle: chapter.title,
+    planTitle: chartPlan?.title,
+    variable: chartPlan?.variable,
+    diagram_type: chartPlan?.diagram_type,
+  });
   const chartTypeGuide = chapter.chart_type
-    ? `\nGrafik turi: "${chapter.chart_type}" (outline'da belgilangan, o'zgartirma)\n- "line": X=vaqt/davr, Y=o'zgaruvchan miqdor вЂ” tendensiya\n- "bar": kategoriyalar taqqoslash вЂ” miqdoriy farqlar\n- "pie": ulush/foiz taqsimot, max 5 bo'lak, jami=100%`
+    ? `\nGrafik turi: "${chapter.chart_type}" (outline'da belgilangan, o'zgartirma). Diagramma semantik turi: "${chartDiagramType || "topic_specific_quantitative_chart"}".${chartDiagramType === "mathematical_graph" ? " Matplotlib uchun matematik funksiyani ifodalovchi aniq expression va x chegaralarini ko'rsat; x bo'yicha chiziq silliq, uzluksiz funksiya grafigi bo'lsin." : chartDiagramType === "experiment_results" ? " Matplotlib uchun tajriba natijalarini, birlik va guruhlarni ko'rsat; ko'pi bilan 5 ta alohida series ishlat." : " Grafik shakli mazmun va ma'lumot turiga mos bo'lsin; mazmunsiz rasm yoki uydirma tajriba natijasi qo'shma."}\n- "line": vaqt/davr yoki uzluksiz trend\n- "bar": kategoriyalarni taqqoslash\n- "pie": ulush/foiz taqsimot, ko'pi bilan 5 bo'lak`
     : "";
 
   const flowchartPlan = Array.isArray(chapter.flowchart_plans) ? chapter.flowchart_plans[0] : null;
+  const flowchartType = classifyGraphvizType({
+    topic: outline.meta?.title,
+    chapterTitle: chapter.title,
+    planTitle: flowchartPlan?.title,
+    purpose: flowchartPlan?.purpose,
+    diagram_type: flowchartPlan?.diagram_type,
+  });
+  const flowchartTemplate = getFlowchartTemplate(flowchartType);
+  const flowchartSpecificGuide = flowchartType === "algorithm_flowchart"
+    ? "Algoritm uchun 3–5 tugun ishlat: aynan bitta start va end; amal to‘rtburchak, shart romb. Qaror bo‘lsa, chiqish qirralarini Ha/Yo‘q deb belgila; sikl faqat mazmunan zarur bo‘lsa."
+    : flowchartType === "pid_control_system"
+      ? "PID uchun aynan 5 tugun va yopiq kontur: input → sum → controller → plant → sensor → sum. Sensorning teskari aloqasini aniq chiz."
+      : flowchartType === "uml_software_architecture"
+        ? "Faqat mavzudagi haqiqiy software component/class/interface/database/actor elementlari va UML munosabatlarini ishlat; dasturiy arxitektura bo‘lmagan mavzuda UML to‘qima."
+        : flowchartType === "process_sequence"
+          ? "Haqiqiy jarayon qadamlarini chapdan o‘ngga bajarilish/vaqt tartibida joyla; start/end/decision faqat bu aynan algoritm bo‘lsa ishlatiladi."
+          : "Haqiqiy funksional kirish, qayta ishlash bloklari va chiqishni chapdan o‘ngga ko‘rsat; algoritm yoki boshqaruv konturi bo‘lmagan mavzuga shartli belgilar to‘qima.";
   const flowchartGuide = chapter.flowchart_count > 0
-    ? `\nGraphviz sodda sxemasi rejasi: "${flowchartPlan?.title || chapter.title}" — ${flowchartPlan?.purpose || "mavzudagi asosiy tushunchalar, omillar va aloqalar"}. Reja captioni: ${flowchartPlan?.caption || ""}.\nAynan 5 ta qisqa label-tugunli, mavzuga xos, ixcham chizma ber; besh label, har bir aloqa va izoh mavzu, bob va reja maqsadiga bevosita mos bo‘lsin; generic to‘ldiruvchi yorliqlarni ishlatma. Bu algoritm emas: start/end, qaror shoxlari, ha/yo'q shartlari, takroriy sikl yoki uzun yuqoridan-pastga ketma-ketlik yasama. 2 qatorga 3+2 shaklda joylashtiriladi; mazmunan mos 4–6 sodda aloqa yetarli. Qisqa nomlar va asosiy tushunchalar, qismlar, omillar yoki natijalardan foydalan; taxminiy statistik raqam kiritma. Title, node va edge matnini mavzuga mos inglizcha yoki o'zbekcha berishing mumkin; Barcha tugunlar mazmuniy tushunchalar; kind bo‘yicha processni standartla, input/outputni faqat mavzuda haqiqiy kirish yoki chiqish bo‘lsa tanla; bu faqat mos shaklni tanlashga xizmat qilsin. O'zbekcha ishda captionni o'zbekcha yozib, "Izoh:" bilan chizmadagi bog'lanishlarni 1–2 qisqa jumlada tushuntir; har bir label uchun alohida tarjima yoki glossariy shart emas. JSONdan tashqari DOT/kod qaytarma.`
+    ? `\nGraphviz diagramma rejasi: "${flowchartPlan?.title || chapter.title}" — ${flowchartPlan?.purpose || "bo‘lim mazmuniga mos aniq tizim yoki jarayon"}. Tanlangan o‘zgarmas tur: ${flowchartTemplate.id} (${flowchartTemplate.name}); yo‘nalish: ${flowchartTemplate.direction}. ${flowchartTemplate.topologyGuidance} ${flowchartSpecificGuide} Umumiy limit 2–5 tugun (PID aynan 5); barcha tugun, qirra va izoh mavzu, bob va reja maqsadiga bevosita mos bo‘lsin; generic yoki mavzuga aloqasiz to‘ldiruvchilarni ishlatma. Faqat ${flowchartTemplate.allowedKinds.join(", ")} kind qiymatlaridan tanla. Har tugun yorlig‘i 1–5 qisqa so‘z; qirralar 1–7 ta, tugunlar bog‘langan bo‘lsin. JSON ichida diagram_type="${flowchartTemplate.id}" yoz; matnni mavzuga mos o‘zbekcha/inglizcha ber. O‘zbekcha captionni "Izoh:" bilan yozib, mazmuniy aloqalarni 1–2 jumlada izohla. Graphviz DOT yoki kodni JSONga kiritma.`
     : "";
 
   // Chapter type instructions
@@ -731,10 +775,10 @@ CONTENT BLOKLARI:
    - Haqiqiy manba yoki o'lchov bo'lishi shart emas: mavzuga mos, iloji boricha realistik qiymat va tafsilotlar tuz; raqamlar diapazoni, birliklari va qatorlar orasidagi munosabatlar mantiqan izchil bo'lsin.
    - Manba aniq berilmagan bo'lsa, manba nomini uydirma qilma; sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini yozma.
 
-6. Graphviz sodda sxemasi (flowchart_count > 0):
-   {"type":"flowchart","title":"<rejadagi mavzuga xos sarlavha>","caption":"Izoh: <besh unsur va aloqalarining qisqa tavsifi>.","nodes":[{"id":"item1","label":"<asosiy tushuncha>","kind":"process"},{"id":"item2","label":"<tarkibiy qism>","kind":"process"},{"id":"item3","label":"<omil yoki vazifa>","kind":"process"},{"id":"item4","label":"<qo‘llanish yoki xususiyat>","kind":"process"},{"id":"item5","label":"<natija yoki ta’sir>","kind":"process"}],"edges":[{"from":"item1","to":"item2","label":""},{"from":"item2","to":"item3","label":""},{"from":"item4","to":"item2","label":""},{"from":"item2","to":"item5","label":""}]}
-   - Aynan 5 ta tugun bo'lsin; har bir label 1–5 so'zdan, mavzuga aniq mos va qisqa bo'lsin. Ular 2 qatorda 3+2 joylashadi; 4–6 ta aloqa chiziqlari yetarli.
-   - Bu sxema algoritm emas: start/end/decision tugunlari, shoxlangan ha/yo‘q qarorlari, sikl, ko‘p qavatli zanjir yoki uzun vertikal ketma-ketlik ishlatma. Tushuncha, tarkibiy qism, omil, xususiyat va natijalar orasidagi mavzuga xos aloqalarni ko‘rsat.
+6. Rejalashtirilgan Graphviz sxemasi (flowchart_count > 0): alohida media slot prompti bu mazmunni JSONga aylantiradi; Graphviz DOT hech qachon qaytarma.
+   - diagram_type faqat functional_block_diagram, algorithm_flowchart, pid_control_system, uml_software_architecture yoki process_sequence bo‘lsin.
+   - Ko‘pi bilan 5 tugun (umumiy 2–5; algoritm 3–5; PID aynan 5); har bir label qisqa va mavzuga xos. Standart shakllarni semantik turga mos ishlat; algoritmga ruxsat berilgan, lekin boshqa sxemaga algoritm belgilari qo‘shma.
+   - Barcha qirralar mazmuniy aloqani ko‘rsatsin; jarayon ketma-ketligi chapdan o‘ngga, algoritm yuqoridan pastga, PID teskari aloqa konturi bilan joylashadi.
    - Bitta rejali sxemani aynan bir marta, asosiy bo'limda qaytar; tugun id'lari lotin harfi bilan boshlansin. Model inglizcha so'z yoki atama qaytarsa, Graphviz ichida aynan o'sha matn qolsin. O'zbekcha captionda butun sxemaga qisqa o'zbekcha izoh bo'lsin; har bir atamaning tarjimasi talab qilinmaydi.
    - Diagrammadan oldin va keyin 1-2 jumla izoh ber; Graphviz DOT manbasini hech qachon JSON ichida yozma.
 

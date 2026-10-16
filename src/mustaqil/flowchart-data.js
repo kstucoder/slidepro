@@ -1,5 +1,7 @@
-const FLOWCHART_KINDS = new Set(["process", "input", "output"]);
-const FLOWCHART_MIN_NODES = 5;
+const { isGraphvizDiagramType } = require("./diagram-types");
+const { getFlowchartTemplate } = require("./flowchart-templates");
+const FLOWCHART_KINDS = new Set(["process", "input", "output", "start", "end", "decision", "sum", "controller", "plant", "sensor", "component", "class", "interface", "database", "actor", "step"]);
+const FLOWCHART_MIN_NODES = 2;
 const FLOWCHART_MAX_NODES = 5;
 const FLOWCHART_MAX_LABEL_WORDS = 5;
 const ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
@@ -203,16 +205,25 @@ function textField(value, field, maxLength, required = true) {
   return text;
 }
 
-function normalizeFlowchartData(flowchart, { language = flowchart?.language } = {}) {
+function normalizeFlowchartData(flowchart, { language = flowchart?.language, diagramType = flowchart?.diagram_type } = {}) {
   if (!flowchart || typeof flowchart !== "object" || Array.isArray(flowchart)) {
     throw new Error("flowchart: ma'lumot obyekt bo'lishi kerak");
   }
+  const normalizedDiagramType = String(diagramType || "functional_block_diagram").trim();
+  if (!isGraphvizDiagramType(normalizedDiagramType)) throw new Error(`flowchart: noma'lum diagram_type (${normalizedDiagramType})`);
+  const template = getFlowchartTemplate(normalizedDiagramType);
   const title = textField(flowchart.title, "title", 120);
   if (!Array.isArray(flowchart.nodes) || flowchart.nodes.length < FLOWCHART_MIN_NODES || flowchart.nodes.length > FLOWCHART_MAX_NODES) {
-    throw new Error(`flowchart: aynan ${FLOWCHART_MIN_NODES} ta node bo'lishi kerak`);
+    throw new Error(`flowchart: ${FLOWCHART_MIN_NODES}–${FLOWCHART_MAX_NODES} ta node bo'lishi kerak`);
   }
-  if (!Array.isArray(flowchart.edges) || flowchart.edges.length < 4 || flowchart.edges.length > 6) {
-    throw new Error("flowchart: edges 4–6 ta bo'lishi kerak");
+  if (normalizedDiagramType === "algorithm_flowchart" && flowchart.nodes.length < 3) {
+    throw new Error("flowchart: algoritm uchun kamida 3 ta node (start, amal va end) kerak");
+  }
+  if (normalizedDiagramType === "pid_control_system" && flowchart.nodes.length !== 5) {
+    throw new Error("flowchart: PID yopiq konturi uchun aynan 5 ta node kerak");
+  }
+  if (!Array.isArray(flowchart.edges) || flowchart.edges.length < 1 || flowchart.edges.length > 7) {
+    throw new Error("flowchart: edges 1–7 ta bo'lishi kerak");
   }
 
   const ids = new Set();
@@ -230,7 +241,9 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language } = 
       throw new Error(`flowchart: node ${index + 1} label 1–${FLOWCHART_MAX_LABEL_WORDS} ta qisqa so'zdan iborat bo'lishi kerak`);
     }
     const kind = String(node.kind || "process").trim().toLowerCase();
-    if (!FLOWCHART_KINDS.has(kind)) throw new Error(`flowchart: noma'lum node turi (${kind || "bo'sh"})`);
+    if (!FLOWCHART_KINDS.has(kind) || !template.allowedKinds.includes(kind)) {
+      throw new Error(`flowchart: ${normalizedDiagramType} uchun noma'lum yoki mos bo'lmagan node turi (${kind || "bo'sh"})`);
+    }
     return { id, label, kind };
   });
 
@@ -249,9 +262,18 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language } = 
     const label = textField(edge.label == null ? "" : edge.label, `edge ${index + 1} label`, 32, false);
     return { from, to, label };
   });
+  const nodeOrder = new Map(nodes.map((node, index) => [node.id, index]));
+  if (normalizedDiagramType === "process_sequence" && edges.some(edge => nodeOrder.get(edge.from) >= nodeOrder.get(edge.to))) {
+    throw new Error("flowchart: jarayon ketma-ketligida qirralar chapdan o'ngga, bajarilish tartibida bo'lsin");
+  }
 
   const outgoing = new Map([...ids].map(id => [id, []]));
-  edges.forEach(edge => outgoing.get(edge.from).push(edge.to));
+  const undirected = new Map([...ids].map(id => [id, []]));
+  edges.forEach(edge => {
+    outgoing.get(edge.from).push(edge.to);
+    undirected.get(edge.from).push(edge.to);
+    undirected.get(edge.to).push(edge.from);
+  });
   const visited = new Set();
   const visiting = new Set();
   const hasCycle = id => {
@@ -265,13 +287,49 @@ function normalizeFlowchartData(flowchart, { language = flowchart?.language } = 
     visited.add(id);
     return false;
   };
-  if ([...ids].some(hasCycle)) throw new Error("flowchart: sikl yasamasin; oddiy, siklsiz aloqalardan foydalaning");
+  const hasDirectedCycle = [...ids].some(hasCycle);
+  if (hasDirectedCycle && !template.allowsCycles) throw new Error("flowchart: bu diagramma turida sikl bo'lmasin");
+  const connected = new Set();
+  const visitConnected = id => {
+    if (connected.has(id)) return;
+    connected.add(id);
+    undirected.get(id).forEach(visitConnected);
+  };
+  visitConnected(nodes[0].id);
+  if (connected.size !== nodes.length) throw new Error("flowchart: barcha node'lar bitta bog'langan chizmaga tegishli bo'lsin");
+
+  if (normalizedDiagramType === "algorithm_flowchart") {
+    const starts = nodes.filter(node => node.kind === "start");
+    const ends = nodes.filter(node => node.kind === "end");
+    if (starts.length !== 1 || ends.length !== 1) throw new Error("flowchart: algoritmda bittadan start va end belgisi bo'lishi kerak");
+    for (const decision of nodes.filter(node => node.kind === "decision")) {
+      const branches = edges.filter(edge => edge.from === decision.id);
+      const branchLabels = new Set(branches.map(edge => edge.label.toLocaleLowerCase().replace(/[’‘`]/g, "'")));
+      const hasYes = [...branchLabels].some(label => /^(ha|yes|true)$/.test(label));
+      const hasNo = [...branchLabels].some(label => /^(yo'q|yo‘q|no|false)$/.test(label.replace(/’/g, "'")));
+      if (branches.length < 2 || !hasYes || !hasNo) throw new Error("flowchart: qaror tugunidan Ha va Yo'q deb belgilangan kamida ikki shox chiqsin");
+    }
+  }
+  if (normalizedDiagramType === "pid_control_system") {
+    const requiredKinds = ["input", "sum", "controller", "plant", "sensor"];
+    if (requiredKinds.some(kind => nodes.filter(node => node.kind === kind).length !== 1)) {
+      throw new Error("flowchart: PID diagrammasida input, sum, controller, plant va sensor bloklaridan bittadan bo'lsin");
+    }
+    if (!hasDirectedCycle) throw new Error("flowchart: PID tizimida sensorni summatorga qaytaruvchi yopiq teskari aloqa bo'lishi kerak");
+    const byKind = new Map(nodes.map(node => [node.kind, node.id]));
+    const requiredPairs = [
+      ["input", "sum"], ["sum", "controller"], ["controller", "plant"], ["plant", "sensor"], ["sensor", "sum"],
+    ];
+    if (requiredPairs.some(([fromKind, toKind]) => !edgePairs.has(`${byKind.get(fromKind)}\u0000${byKind.get(toKind)}`))) {
+      throw new Error("flowchart: PID signal path input→sum→controller→plant→sensor→sum to'liq bo'lishi shart");
+    }
+  }
 
   const totalTextLength = title.length + nodes.reduce((sum, node) => sum + node.label.length, 0)
     + edges.reduce((sum, edge) => sum + edge.label.length, 0);
   if (totalTextLength > 800) throw new Error("flowchart: umumiy matn 800 belgidan oshmasin");
 
-  return { title, nodes, edges };
+  return { title, diagram_type: normalizedDiagramType, nodes, edges };
 }
 
 module.exports = {

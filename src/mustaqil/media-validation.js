@@ -1,6 +1,7 @@
 const { normalizeFlowchartData } = require("./flowchart-data");
 const { isUzbek } = require("./flowchart-data");
 const { MIN_DIAGRAM_COUNT } = require("./media-requirements");
+const { normalizeChartData } = require("./chart-data");
 
 function formulaKey(value) {
   return String(value == null ? "" : value)
@@ -72,9 +73,14 @@ function validatePlannedMedia(generatedChapters, plannedChapters, { language, mi
     });
     actualFlowcharts.forEach((flowchart, flowchartIndex) => {
       try {
-        normalizeFlowchartData(flowchart, { language });
+        const expectedType = flowchartPlans[flowchartIndex]?.diagram_type || flowchart.diagram_type || flowchart.template_id;
+        normalizeFlowchartData(flowchart, { language, diagramType: expectedType });
       } catch (error) {
         errors.push(`${chapterName}: flowchart ${flowchartIndex + 1} yaroqsiz (${error.message})`);
+      }
+      const expectedType = flowchartPlans[flowchartIndex]?.diagram_type;
+      if (expectedType && flowchart.diagram_type !== expectedType) {
+        errors.push(`${chapterName}: flowchart ${flowchartIndex + 1} diagram_type ${flowchart.diagram_type || "bo'sh"}/${expectedType}`);
       }
       const caption = String(flowchart.caption || "").trim();
       const captionWordCount = caption.split(/\s+/).filter(Boolean).length;
@@ -85,12 +91,26 @@ function validatePlannedMedia(generatedChapters, plannedChapters, { language, mi
       }
     });
     actualCharts.forEach((chart, chartIndex) => {
+      try {
+        normalizeChartData(chart);
+      } catch (error) {
+        errors.push(`${chapterName}: chart ${chartIndex + 1} yaroqsiz (${error.message})`);
+      }
       if (!String(chart.data_source || chart.source || "").trim()) {
         errors.push(`${chapterName}: chart ${chartIndex + 1} data_source ko'rsatilmagan`);
       }
       const actualType = String(chart.chartType || chart.chart_type || "").toLowerCase();
-      if (planned.chart_type && actualType !== planned.chart_type) {
-        errors.push(`${chapterName}: chart ${chartIndex + 1} turi ${actualType || "bo'sh"}/${planned.chart_type}`);
+      const plannedChart = chartPlans[chartIndex] || {};
+      const expectedChartType = plannedChart.diagram_type === "mathematical_graph" ? "line"
+        : plannedChart.diagram_type === "experiment_results"
+          ? (plannedChart.chartType || plannedChart.chart_type || (planned.chart_type === "line" ? "line" : "bar"))
+          : plannedChart.chartType || plannedChart.chart_type || planned.chart_type;
+      if (expectedChartType && actualType !== expectedChartType) {
+        errors.push(`${chapterName}: chart ${chartIndex + 1} turi ${actualType || "bo'sh"}/${expectedChartType}`);
+      }
+      const expectedDiagramType = chartPlans[chartIndex]?.diagram_type;
+      if (expectedDiagramType && chart.diagram_type !== expectedDiagramType) {
+        errors.push(`${chapterName}: chart ${chartIndex + 1} diagram_type ${chart.diagram_type || "bo'sh"}/${expectedDiagramType}`);
       }
     });
     if (actualFormulas.length !== expectedFormulaCount) {

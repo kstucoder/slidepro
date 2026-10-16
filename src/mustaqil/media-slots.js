@@ -1,12 +1,13 @@
 const MEDIA_TYPES = new Set(["formula", "chart", "flowchart", "table"]);
 const { selectFlowchartTemplates } = require("./flowchart-templates");
+const { classifyMatplotlibType } = require("./diagram-types");
 
 function countFor(chapter, type, plans) {
   const field = `${type}_count`;
   return Math.max(0, Math.floor(Number(chapter?.[field]) || 0), plans.length);
 }
 
-function buildMediaSlots(chapters = [], { random = Math.random } = {}) {
+function buildMediaSlots(chapters = [], { random = Math.random, topic = "" } = {}) {
   const slots = [];
   (Array.isArray(chapters) ? chapters : []).forEach((chapter, chapterIndex) => {
     const chapterId = String(chapter?.id || `chapter-${chapterIndex + 1}`);
@@ -43,21 +44,56 @@ function buildMediaSlots(chapters = [], { random = Math.random } = {}) {
     }
   });
   const flowchartSlots = slots.filter(slot => slot.type === "flowchart");
-  const templates = selectFlowchartTemplates(flowchartSlots.length, random);
+  const contexts = flowchartSlots.map(slot => {
+    const chapter = chapters[slot.chapterIndex] || {};
+    const section = Array.isArray(chapter.sections) ? chapter.sections[slot.sectionIndex] : null;
+    const plan = slot.plan && typeof slot.plan === "object" && !Array.isArray(slot.plan) ? slot.plan : {};
+    return {
+      topic,
+      chapterTitle: chapter.title,
+      sectionTitle: section?.title,
+      planTitle: plan.title,
+      purpose: plan.purpose,
+      caption: plan.caption,
+      diagram_type: plan.diagram_type,
+    };
+  });
+  const templates = selectFlowchartTemplates(contexts, random);
   flowchartSlots.forEach((slot, index) => {
     const template = templates[index];
     const plan = slot.plan && typeof slot.plan === "object" && !Array.isArray(slot.plan) ? slot.plan : {};
     slot.template_id = template.id;
     slot.template_name = template.name;
     slot.template_description = template.description;
+    slot.diagram_type = template.diagramType;
     slot.plan = {
       ...plan,
+      diagram_type: template.diagramType,
       template_id: template.id,
       template_name: template.name,
       template_description: template.description,
-      template_guidance: template.guidance,
+      template_guidance: template.topologyGuidance,
     };
   });
+  for (const slot of slots.filter(item => item.type === "chart")) {
+    const chapter = chapters[slot.chapterIndex] || {};
+    const section = Array.isArray(chapter.sections) ? chapter.sections[slot.sectionIndex] : null;
+    const plan = slot.plan && typeof slot.plan === "object" && !Array.isArray(slot.plan) ? slot.plan : {};
+    slot.diagram_type = classifyMatplotlibType({
+      topic,
+      chapterTitle: chapter.title,
+      sectionTitle: section?.title,
+      planTitle: plan.title,
+      purpose: plan.purpose,
+      variable: plan.variable,
+      caption: plan.caption,
+      diagram_type: plan.diagram_type,
+    });
+    if (slot.diagram_type === "mathematical_graph") slot.chartType = "line";
+    if (slot.diagram_type === "experiment_results" && !["bar", "line"].includes(slot.chartType)) {
+      slot.chartType = /trend|vaqt|time|dinamik/i.test(`${plan.title || ""} ${plan.variable || ""}`) ? "line" : "bar";
+    }
+  }
   return slots;
 }
 

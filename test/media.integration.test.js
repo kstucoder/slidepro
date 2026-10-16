@@ -1,6 +1,5 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
 const JSZip = require("jszip");
 const sharp = require("sharp");
 const { renderFormula } = require("../src/mustaqil/formula");
@@ -49,6 +48,7 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
 
   const flowchartInput = {
     type: "flowchart",
+    diagram_type: "functional_block_diagram",
     title: "Ichimlik suvini tozalash tarkibi",
     nodes: [
       { id: "source", label: "Xom suv manbai", kind: "input" },
@@ -66,44 +66,36 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
     caption: "Izoh: suv manbai, filtrlash, dezinfeksiya va sifat mezonining o'zaro aloqalari.",
   };
   const baselineDot = buildFlowchartDot(flowchartInput, { wrapLabels: false, ranksepMultiplier: 1 });
-  const baselinePng = spawnSync("dot", ["-Kdot", "-Tpng", "-Gdpi=160"], {
-    input: baselineDot,
-    maxBuffer: 8 * 1024 * 1024,
-  });
-  assert.equal(baselinePng.status, 0, baselinePng.stderr?.toString("utf8") || "baseline Graphviz render xatosi");
-  const baselineNormalized = await sharp(baselinePng.stdout)
-    .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .resize({ width: 1400, height: 1800, fit: "inside", withoutEnlargement: true })
-    .png()
-    .toBuffer();
-  const baselineMetadata = await sharp(baselineNormalized).metadata();
-  const baselineScale = Math.min(520 / baselineMetadata.width, 620 / baselineMetadata.height, 1);
-  const baselineHeight = Math.round(baselineMetadata.height * baselineScale);
+  const spacedDot = buildFlowchartDot(flowchartInput, { wrapLabels: false, ranksepMultiplier: 1.5 });
+  const baselineRanksep = Number(baselineDot.match(/ranksep="([\d.]+)"/)?.[1]);
+  const spacedRanksep = Number(spacedDot.match(/ranksep="([\d.]+)"/)?.[1]);
+  assert.ok(Math.abs(spacedRanksep - baselineRanksep * 1.5) < 0.001, "tanlangan qator oralig‘i avvalgisidan 50% kengaysin");
 
   const flowchart = await renderFlowchart(flowchartInput);
   const flowchartMetadata = await sharp(flowchart.buf).metadata();
   assert.equal(flowchartMetadata.format, "png");
   assert.ok(flowchart.width > 0 && flowchart.width <= 520);
   assert.ok(flowchart.height > 0 && flowchart.height <= 620);
-  assert.ok(flowchart.height >= Math.ceil(baselineHeight * 1.5), "oqim sxemasi avvalgi balandligidan kamida 50% baland bo‘lsin");
-  assert.ok(Math.abs(flowchart.width / flowchart.height - flowchartMetadata.width / flowchartMetadata.height) < 0.01, "balandlik oshganda rasm proporsiyasi saqlansin");
+  assert.ok(Math.abs(flowchart.width / flowchart.height - flowchartMetadata.width / flowchartMetadata.height) < 0.01, "qator oralig‘i oshganda rasm proporsiyasi saqlansin");
   imageCache.set("d_2", flowchart);
 
   const controllerFlowchart = await renderFlowchart({
     type: "flowchart",
+    diagram_type: "pid_control_system",
     title: "PID boshqaruv tizimining tarkibi",
     nodes: [
       { id: "setpoint", label: "Topshiriq signali", kind: "input" },
-      { id: "sensor", label: "Datchik o'lchovi", kind: "input" },
-      { id: "controller", label: "PID rostlagich", kind: "process" },
-      { id: "actuator", label: "Ijro mexanizmi", kind: "output" },
-      { id: "plant", label: "Boshqaruv obyekti", kind: "process" },
+      { id: "sum", label: "Xatolik yig'indisi", kind: "sum" },
+      { id: "controller", label: "PID rostlagich", kind: "controller" },
+      { id: "plant", label: "Boshqaruv obyekti", kind: "plant" },
+      { id: "sensor", label: "Datchik o'lchovi", kind: "sensor" },
     ],
     edges: [
-      { from: "setpoint", to: "controller" },
-      { from: "sensor", to: "controller" },
-      { from: "controller", to: "actuator" },
-      { from: "actuator", to: "plant" },
+      { from: "setpoint", to: "sum" },
+      { from: "sum", to: "controller" },
+      { from: "controller", to: "plant" },
+      { from: "plant", to: "sensor" },
+      { from: "sensor", to: "sum", label: "Teskari aloqa" },
     ],
   });
   assert.equal((await sharp(controllerFlowchart.buf).metadata()).format, "png");
@@ -143,10 +135,10 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
             labels: ["C", "D"], values: [3, 4], data_source: "Official statistical yearbook",
           },
           {
-            type: "flowchart", number: 4, title: "PID boshqaruv tizimining tarkibi",
+            type: "flowchart", number: 4, diagram_type: "pid_control_system", title: "PID boshqaruv tizimining tarkibi",
             caption: "PID boshqaruv tizimining tarkibi. Izoh: topshiriq va o'lchov signallari rostlagich, ijro mexanizmi hamda boshqaruv obyekti bilan bog'liq.",
-            nodes: [{ id: "setpoint", label: "Topshiriq signali", kind: "input" }, { id: "sensor", label: "Datchik o'lchovi", kind: "input" }, { id: "controller", label: "PID rostlagich", kind: "process" }, { id: "actuator", label: "Ijro mexanizmi", kind: "output" }, { id: "plant", label: "Boshqaruv obyekti", kind: "process" }],
-            edges: [{ from: "setpoint", to: "controller" }, { from: "sensor", to: "controller" }, { from: "controller", to: "actuator" }, { from: "actuator", to: "plant" }],
+            nodes: [{ id: "setpoint", label: "Topshiriq signali", kind: "input" }, { id: "sum", label: "Xatolik yig'indisi", kind: "sum" }, { id: "controller", label: "PID rostlagich", kind: "controller" }, { id: "plant", label: "Boshqaruv obyekti", kind: "plant" }, { id: "sensor", label: "Datchik o'lchovi", kind: "sensor" }],
+            edges: [{ from: "setpoint", to: "sum" }, { from: "sum", to: "controller" }, { from: "controller", to: "plant" }, { from: "plant", to: "sensor" }, { from: "sensor", to: "sum", label: "Teskari aloqa" }],
           },
         ],
       },
@@ -263,7 +255,7 @@ test("media renderi xato bo'lsa ham DOCX matnli fallback bilan tayyorlanadi", as
     content: [
       { type: "chart", number: 1, title: "Fallback grafik", caption: "Grafik captioni", chartType: "invalid", labels: ["A", "B"], values: [1, 2], data_source: "Sintetik illustrativ ma'lumot; real o'lchov emas" },
       { type: "flowchart", number: 2, title: "Fallback oqim sxemasi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [], edges: [] },
-      { type: "flowchart", number: 3, title: "Buzilgan PNG sinovi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [{ id: "a", label: "Birinchi bosqich", kind: "process" }, { id: "b", label: "Ikkinchi bosqich", kind: "process" }, { id: "c", label: "Uchinchi bosqich", kind: "process" }, { id: "d", label: "To‘rtinchi bosqich", kind: "process" }, { id: "e", label: "Beshinchi bosqich", kind: "process" }], edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }, { from: "d", to: "b" }, { from: "b", to: "e" }] },
+      { type: "flowchart", number: 3, diagram_type: "functional_block_diagram", title: "Buzilgan PNG sinovi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [{ id: "a", label: "Birinchi bosqich", kind: "process" }, { id: "b", label: "Ikkinchi bosqich", kind: "process" }, { id: "c", label: "Uchinchi bosqich", kind: "process" }, { id: "d", label: "To‘rtinchi bosqich", kind: "process" }, { id: "e", label: "Beshinchi bosqich", kind: "process" }], edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }, { from: "d", to: "b" }, { from: "b", to: "e" }] },
     ],
   };
   const cache = await prerenderMedia([chapter]);

@@ -22,6 +22,7 @@ const { renderFormula } = require("./formula");
 const { renderChart }   = require("./chart");
 const { renderFlowchart } = require("./flowchart");
 const { getFlowchartTemplate } = require("./flowchart-templates");
+const { classifyGraphvizType } = require("./diagram-types");
 const { buildDocument } = require("./builder");
 const { renumberMedia } = require("./media-numbering");
 const { countWords, chapterMainNumber, normalizeChapterContent, clampChapterContent } = require("./structure");
@@ -78,14 +79,18 @@ function parseStructuredJson(text) {
 
 function mediaSlotPrompt(slot, { topic, language, sourceContent, chapter }) {
   const planText = JSON.stringify(slot.plan || {});
-  const flowchartTemplate = getFlowchartTemplate(slot.template_id || slot.plan?.template_id);
+  const flowchartTemplate = getFlowchartTemplate(slot.diagram_type || slot.template_id || slot.plan?.diagram_type || slot.plan?.template_id);
   const source = sourceContent ? `\nMavzu va taxminlarni yo'naltirish uchun manba konteksti (qiymatlar bu manbada aynan keltirilgan bo'lishi shart emas):\n${String(sourceContent).slice(0, 1800)}` : "";
   const chapterContext = chapter?.title ? ` Bob: ${chapter.title}.${chapter.role ? ` Bob vazifasi: ${chapter.role}.` : ""}` : "";
   const common = `Mavzu: ${topic || "Mavzu"}.${chapterContext} Til: ${language || "o'zbek"}. Slot ID: ${slot.slot_id}. Reja: ${planText}.${source}\nFaqat bitta media obyektini tuz. Slot ID va type qiymatlarini aynan saqla; boshqa izoh yoki markdown bermagin. Sarlavha va caption media mazmunini tabiiy, qisqa ifodalasin; ularga meta-ma'lumot yoki status yorlig'i qo'shma.`;
   const schemas = {
     formula: `Aynan rejalashtirilgan LaTeX formulani qaytar, yangi formula to'qima. JSON: {"slot_id":"${slot.slot_id}","type":"formula","latex":"...","display_text":"...","caption":"..."}`,
-    chart: `Faqat grafik ma'lumotini qaytar. chartType=${slot.chartType}. 2–8 qisqa label va ularga mos finite sonli values; pie uchun ko'pi bilan 5 label va manfiy bo'lmagan qiymatlar. Qiymatlar haqiqiy o'lchov yoki manbadan olingan bo'lishi shart emas: mavzu, reja va kontekstga mos, iloji boricha real hayotda uchrashi mumkin bo'lgan diapazon, birlik va naqshlarni tanlab, ishonarli hamda o'zaro izchil qiymatlar tuz. Taqqoslash yoki vaqt tendensiyasi mazmunan mantiqli bo'lsin. Haqiqiy manba promptda berilmagan bo'lsa, manba nomini uydirma qilma va data_source maydonini bo'sh qoldir; faqat berilgan manbada tegishli ma'lumot aniq ko'rsatilgan bo'lsa, uning nomini yoz. Sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma. JSON: {"slot_id":"${slot.slot_id}","type":"chart","chartType":"${slot.chartType}","title":"...","labels":["..."],"values":[1,2],"unit":"","data_source":"","caption":"..."}`,
-    flowchart: `Faqat Graphviz uchun JSON strukturani qaytar; DOT yoki kod qaytarma. Tanlangan va o‘zgarmas shablon: ${flowchartTemplate.id} — ${flowchartTemplate.name}. Shablon vazifasi: ${flowchartTemplate.description} Tuzilish bo‘yicha ko‘rsatma: ${flowchartTemplate.guidance} Bu hujjatdagi mavzu, bob, reja maqsadi va kontekstga mos, aniq beshta asosiy unsur tanla; har bir tugun, aloqa va caption mavzu, bob va reja maqsadiga bevosita mos bo‘lsin, generic to‘ldiruvchi yorliqlar ishlatma; algoritm yoki mavzudan uzilgan bosqichlar bermagin. Aynan 5 node, 2 qatorda 3+2 ko‘rinishda joylashadi; 4–6 sodda aloqadan foydalan. Bu algoritm emas: start/end/decision tugunlari, ha/yo‘q shoxlari, sikl yoki uzun vertikal ketma-ketlik yasama. Kind faqat process/input/output: processni odatiy tanlov qil, input/outputni esa mavzuda haqiqatan kirish yoki chiqish unsur bo‘lsa ishlat; bu shunchaki mos shaklni tanlaydi. Har bir label 1–5 so‘z va qisqa bo‘lsin. ID lotin harfidan boshlanadigan xavfsiz bo‘lsin, barcha edge mavjud node'larni ulasin. Title, node va edge matnini mavzuga mos, tushunarli inglizcha yoki o'zbekcha berishing mumkin. O'zbekcha ishda captionni o'zbekcha yozib, "Izoh:" bilan besh unsur orasidagi mazmuniy aloqani 1–2 qisqa jumlada tushuntir; har bir label uchun tarjima/glossariy shart emas. JSON: {"slot_id":"${slot.slot_id}","type":"flowchart","title":"...","caption":"Izoh: besh asosiy unsur va ularning aloqalari.","nodes":[{"id":"item1","label":"...","kind":"process"},{"id":"item2","label":"...","kind":"process"},{"id":"item3","label":"...","kind":"process"},{"id":"item4","label":"...","kind":"process"},{"id":"item5","label":"...","kind":"process"}],"edges":[{"from":"item1","to":"item2","label":""},{"from":"item2","to":"item3","label":""},{"from":"item4","to":"item2","label":""},{"from":"item2","to":"item5","label":""}]}`,
+    chart: slot.diagram_type === "mathematical_graph"
+      ? `Matplotlib matematik grafik uchun JSON qaytar. 1–5 ta mavzuga mos aniq funksiyani yoz; rejadagi functions, x_min va x_max mavjud bo‘lsa ularni aynan saqla, mavzu/rejaga zid funksiya bilan almashtirma. Ifodada faqat x, pi, e, raqamlar, + - * / **, qavs va sin/cos/tan/asin/acos/atan/sinh/cosh/tanh/exp/log/log10/sqrt/abs funksiyalaridan foydalan. x_min < x_max bo‘lsin; render 501 namunaviy nuqtani hisoblab, silliq egri chiziq chizadi — y qiymatlarini qo‘lda sanab kiritma. Oraliq va ifoda mazmuniga mos, sarlavha/birlik/o‘qlarni aniq yoz. Haqiqiy manba promptda bo‘lmasa, manba uydirma qilma va data_source ni bo‘sh qoldir. JSON: {"slot_id":"${slot.slot_id}","type":"chart","diagram_type":"mathematical_graph","chartType":"line","title":"...","functions":[{"name":"f(x)","expression":"x**2"}],"x_min":-5,"x_max":5,"x_label":"x","y_label":"f(x)","unit":"","data_source":"","caption":"..."}`
+      : slot.diagram_type === "experiment_results"
+        ? `Matplotlib tajriba natijalari diagrammasi uchun JSON qaytar. chartType=${slot.chartType}; labels 2–8 ta tajriba sharti, vaqt nuqtasi yoki guruhni ifodalasin. 1–5 ta nomlangan series ber; har series.values massivida label sonicha finite son, yagona birlik va mavzuga mos diapazon bo‘lsin. Rejada labels/series/values berilgan bo‘lsa ularni aynan saqla; boshqa natija yoki aloqasiz guruh qo‘shma. Natijalar mavzu va reja maqsadiga bevosita bog‘liq bo‘lsin; grafikda o‘qlarning nomi va birliklarini aniq ko‘rsat. Haqiqiy manba promptda aniq berilmagan bo‘lsa, manba nomini to‘qima va data_source ni bo‘sh qoldir. JSON: {"slot_id":"${slot.slot_id}","type":"chart","diagram_type":"experiment_results","chartType":"${slot.chartType}","title":"...","labels":["...","..."],"series":[{"name":"Tajriba 1","values":[1,2]}],"x_label":"...","y_label":"...","unit":"","data_source":"","caption":"..."}`
+        : `Faqat grafik ma'lumotini qaytar. chartType=${slot.chartType}. 2–8 qisqa label va ularga mos finite sonli values; pie uchun ko'pi bilan 5 label va manfiy bo'lmagan qiymatlar. Qiymatlar mavzu, reja va kontekstga mos hamda o'zaro izchil bo'lsin; mavzuga aloqasiz ma'lumot yoki manba uydirma qilma. Haqiqiy manba promptda berilmagan bo'lsa, data_source maydonini bo'sh qoldir. Sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma. JSON: {"slot_id":"${slot.slot_id}","type":"chart","chartType":"${slot.chartType}","title":"...","labels":["..."],"values":[1,2],"unit":"","data_source":"","caption":"..."}`,
+    flowchart: `Faqat Graphviz uchun JSON strukturani qaytar; DOT yoki kod qaytarma. Tanlangan va o‘zgarmas diagram_type: ${flowchartTemplate.id} — ${flowchartTemplate.name}. Grafik yo‘nalishi: ${flowchartTemplate.direction}. ${flowchartTemplate.topologyGuidance} Mavzu, bob va reja maqsadiga bevosita mos, mavzuga xos tugun va aloqalar tanla; generic to‘ldiruvchilar yoki boshqa diagramma turining elementlarini ishlatma. Faqat quyidagi kind qiymatlari mumkin: ${flowchartTemplate.allowedKinds.join(", ")}. Umumiy limit 2–5 node va 1–7 edge; algoritm 3–5 tugunli bo‘lib bitta start/end talab qiladi; PID uchun aynan 5 tugun va sensor→sum yopiq aloqa shart. Label 1–5 so‘z, ID xavfsiz, barcha node'lar bog‘langan bo‘lsin. Sarlavha va label mavzuga mos o‘zbekcha yoki inglizcha bo‘lsin; o‘zbekcha captionni "Izoh:" bilan qisqa yoz. JSON: {"slot_id":"${slot.slot_id}","type":"flowchart","diagram_type":"${flowchartTemplate.id}","title":"...","caption":"Izoh: ...","nodes":[{"id":"item1","label":"...","kind":"${flowchartTemplate.allowedKinds[0]}"},{"id":"item2","label":"...","kind":"${flowchartTemplate.allowedKinds[Math.min(1, flowchartTemplate.allowedKinds.length - 1)]}"}],"edges":[{"from":"item1","to":"item2","label":""}]}`,
     table: `Faqat bitta jadval ma'lumotini qaytar; kamida 3 ustun va 3–6 qator, barcha qatorlarda ustunlar soni teng bo'lsin. Haqiqiy manba yoki o'lchov bo'lishi shart emas: jadvalni mavzuga mos, iloji boricha realistik tafsilotlar va (kerak bo'lsa) ishonarli raqamlar bilan to'ldir. Raqamli qiymatlarning diapazoni, birliklari, aniqlik darajasi va qatorlar orasidagi munosabatlar o'zaro mantiqan izchil bo'lsin. Manba promptda aniq berilmagan bo'lsa, manba nomi yoki havolasini uydirma qilma. Sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma; jadval mazmunini tabiiy ifodala. JSON: {"slot_id":"${slot.slot_id}","type":"table","title":"...","caption":"...","headers":["A","B","C"],"rows":[["...","...","..."],["...","...","..."],["...","...","..."]]}`,
   };
   return `${common}\n${schemas[slot.type] || "Noma'lum media turi."}`;
@@ -275,23 +280,106 @@ function fallbackFlowchart(plan, chapter, language, index) {
       ? `Основные понятия и содержательные связи по теме «${subject}»`
       : `Key concepts and topic-specific relationships for ${subject}`;
   const labels = fallbackFlowchartLabels(plan, chapter);
+  const diagramType = plan?.diagram_type || plan?.template_id || classifyGraphvizType({
+    topic: subject,
+    chapterTitle: chapter?.title,
+    planTitle: plan?.title,
+    purpose: plan?.purpose,
+  });
+  const uniqueLabels = [...new Set(labels.map(label => label.trim()).filter(Boolean))].slice(0, 5);
+  if (uniqueLabels.length < 2) {
+    for (const candidate of [String(plan?.purpose || "").trim(), String(chapter?.title || "").trim(), String(plan?.title || "").trim()]) {
+      if (candidate && !uniqueLabels.some(label => label.toLocaleLowerCase() === candidate.toLocaleLowerCase())) uniqueLabels.push(candidate.split(/\s+/).slice(0, 5).join(" "));
+      if (uniqueLabels.length >= 2) break;
+    }
+  }
+  const actionLabel = uniqueLabels.find(label => !/^(boshlash|yakunlash|start|end)$/i.test(label)) || String(plan?.title || subject).split(/\s+/).slice(0, 5).join(" ");
+  let nodes;
+  let edges;
+  if (diagramType === "algorithm_flowchart") {
+    const hasDecision = /tekshir|qaror|shart|mezon|threshold|if\b|condition/i.test(`${plan?.title || ""} ${plan?.purpose || ""}`);
+    if (hasDecision && uniqueLabels.length >= 2) {
+      nodes = [
+        { id: "start", label: "Boshlash", kind: "start" },
+        { id: "action", label: actionLabel, kind: "process" },
+        { id: "decision", label: uniqueLabels.find(label => /tekshir|qaror|shart|mezon/i.test(label)) || "Shartni tekshirish", kind: "decision" },
+        { id: "result", label: uniqueLabels.find(label => label !== actionLabel) || actionLabel, kind: "process" },
+        { id: "end", label: "Yakunlash", kind: "end" },
+      ];
+      edges = [
+        { from: "start", to: "action", label: "" },
+        { from: "action", to: "decision", label: "" },
+        { from: "decision", to: "result", label: "Ha" },
+        { from: "decision", to: "end", label: "Yo‘q" },
+        { from: "result", to: "end", label: "" },
+      ];
+    } else {
+      nodes = [
+        { id: "start", label: "Boshlash", kind: "start" },
+        { id: "action", label: actionLabel, kind: "process" },
+        { id: "end", label: "Yakunlash", kind: "end" },
+      ];
+      edges = [{ from: "start", to: "action", label: "" }, { from: "action", to: "end", label: "" }];
+    }
+  } else if (diagramType === "pid_control_system") {
+    nodes = [
+      { id: "reference", label: "Topshiriq signali", kind: "input" },
+      { id: "sum", label: "Xatolik yig‘indisi", kind: "sum" },
+      { id: "pid", label: "PID rostlagich", kind: "controller" },
+      { id: "plant", label: "Boshqaruv obyekti", kind: "plant" },
+      { id: "sensor", label: "O‘lchov datchigi", kind: "sensor" },
+    ];
+    edges = [
+      { from: "reference", to: "sum", label: "" },
+      { from: "sum", to: "pid", label: "xatolik" },
+      { from: "pid", to: "plant", label: "boshqaruv signali" },
+      { from: "plant", to: "sensor", label: "chiqish" },
+      { from: "sensor", to: "sum", label: "teskari aloqa" },
+    ];
+  } else if (diagramType === "functional_block_diagram") {
+    const topicContext = `${plan?.title || ""} ${plan?.purpose || ""} ${chapter?.title || ""}`;
+    if (/sabab\s*[-–]?\s*oqibat|cause\s*[-–]?\s*effect|fishbone|asosiy\s+muammo/i.test(topicContext)) {
+      const explicitCauses = Array.isArray(plan?.causes) ? plan.causes : Array.isArray(plan?.factors) ? plan.factors : [];
+      const causeLabels = (explicitCauses.length ? explicitCauses : uniqueLabels)
+        .map(label => String(label || "").trim())
+        .filter(label => label && !/sabab\s*[-–]?\s*oqibat|cause\s*[-–]?\s*effect|fishbone|tahlil|muammo|oqibat|natija/i.test(label))
+        .slice(0, 4);
+      if (!causeLabels.length) causeLabels.push(String(plan?.purpose || chapter?.title || subject).split(/[,;:]/)[0].trim().slice(0, 48) || "Mavzu omili");
+      const effectText = `${plan?.outcome || ""} ${plan?.effect || ""} ${plan?.title || ""} ${plan?.purpose || ""}`;
+      const effectLabel = String(plan?.outcome || plan?.effect || /asosiy\s+muammo|muammo|oqibat|natija/i.exec(effectText)?.[0] || "Asosiy natija")
+        .split(/\s+/).slice(0, 5).join(" ");
+      nodes = [
+        ...causeLabels.map((label, nodeIndex) => ({ id: `cause${nodeIndex + 1}`, label, kind: "input" })),
+        { id: "effect", label: effectLabel, kind: "output" },
+      ].slice(0, 5);
+      edges = nodes.filter(node => node.id !== "effect").map(node => ({ from: node.id, to: "effect", label: "" }));
+    } else {
+      nodes = uniqueLabels.slice(0, 5).map((label, nodeIndex, all) => ({
+        id: `item${nodeIndex + 1}`,
+        label,
+        kind: nodeIndex === 0 ? "input" : nodeIndex === all.length - 1 ? "output" : "process",
+      }));
+      edges = nodes.slice(0, -1).map((node, nodeIndex) => ({ from: node.id, to: nodes[nodeIndex + 1].id, label: "" }));
+    }
+  } else {
+    const hierarchicalUml = diagramType === "uml_software_architecture" && /ierarx|hierarch|daraxt|tree/i.test(`${plan?.title || ""} ${plan?.purpose || ""}`);
+    const nodeLabels = uniqueLabels.slice(0, 5);
+    nodes = nodeLabels.map((label, nodeIndex) => ({
+      id: `item${nodeIndex + 1}`,
+      label,
+      kind: diagramType === "uml_software_architecture" ? "component" : "step",
+    }));
+    edges = hierarchicalUml
+      ? nodes.slice(1).map(node => ({ from: nodes[0].id, to: node.id, label: "contains" }))
+      : nodes.slice(0, -1).map((node, nodeIndex) => ({ from: node.id, to: nodes[nodeIndex + 1].id, label: "" }));
+  }
   const flowchart = {
     type: "flowchart",
-    template_id: plan?.template_id || "classic_grid",
+    diagram_type: diagramType,
+    template_id: diagramType,
     title,
-    nodes: [
-      { id: "item1", label: labels[0], kind: "process" },
-      { id: "item2", label: labels[1], kind: "process" },
-      { id: "item3", label: labels[2], kind: "process" },
-      { id: "item4", label: labels[3], kind: "process" },
-      { id: "item5", label: labels[4], kind: "process" },
-    ],
-    edges: [
-      { from: "item1", to: "item2", label: "" },
-      { from: "item2", to: "item3", label: "" },
-      { from: "item4", to: "item2", label: "" },
-      { from: "item2", to: "item5", label: "" },
-    ],
+    nodes,
+    edges,
   };
   flowchart.caption = cleanMediaText(buildFlowchartCaption(flowchart, plan?.purpose || defaultPurpose, language), title);
   return flowchart;
@@ -400,13 +488,20 @@ function alignPlannedFlowchartBlocks(chapter, content, language = "o'zbek") {
   const flowcharts = Array.from({ length: count }, (_, index) => {
     const plan = plans[index] || {};
     let flowchart = candidates[index];
+    const diagramType = plan.diagram_type || plan.template_id || flowchart?.diagram_type || flowchart?.template_id || classifyGraphvizType({
+      topic: chapter.title,
+      chapterTitle: chapter.title,
+      planTitle: plan.title,
+      purpose: plan.purpose,
+    });
     try {
-      flowchart = { ...flowchart, ...normalizeFlowchartData(flowchart || {}) };
+      flowchart = { ...flowchart, ...normalizeFlowchartData({ ...(flowchart || {}), diagram_type: diagramType }, { language, diagramType }) };
     } catch {
-      flowchart = fallbackFlowchart(plan, chapter, language, index);
+      flowchart = fallbackFlowchart({ ...plan, diagram_type: diagramType }, chapter, language, index);
     }
     flowchart.title = cleanMediaText(flowchart.title || plan.title || "Oqim sxemasi", "Oqim sxemasi").slice(0, 180);
-    flowchart.template_id = flowchart.template_id || plan.template_id || "classic_grid";
+    flowchart.diagram_type = diagramType;
+    flowchart.template_id = diagramType;
     // Yorliq tili Graphviz renderiga ta'sir qilmaydi; captionda qisqa o'zbekcha izoh qoladi.
     flowchart.caption = cleanMediaText(buildFlowchartCaption(flowchart, plan.purpose, language), flowchart.title);
     return flowchart;
@@ -439,9 +534,12 @@ function normalizeMediaSlotResult(slot, response, { chapter, language }) {
   }
 
   if (slot.type === "chart") {
-    const chartType = slot.chartType;
+    const diagramType = slot.diagram_type || plan.diagram_type;
+    const chartType = diagramType === "mathematical_graph" ? "line"
+      : diagramType === "experiment_results" && !["bar", "line"].includes(slot.chartType) ? "bar"
+        : slot.chartType;
     if (!["bar", "line", "pie"].includes(chartType)) throw new Error(`noma'lum chartType (${chartType})`);
-    const candidate = { ...plan, ...response, type: "chart", chartType };
+    const candidate = { ...plan, ...response, type: "chart", chartType, ...(diagramType ? { diagram_type: diagramType } : {}) };
     candidate.title = cleanMediaText(plan.title || response.title || `${chapter?.title || "Mavzu"}: asosiy ko'rsatkichlar`, `${chapter?.title || "Mavzu"}: asosiy ko'rsatkichlar`);
     const source = String(response.data_source || response.source || plan.data_source || "").trim();
     candidate.data_source = source || "Sintetik illustrativ ma'lumot; real o'lchov emas";
@@ -450,15 +548,18 @@ function normalizeMediaSlotResult(slot, response, { chapter, language }) {
   }
 
   if (slot.type === "flowchart") {
+    const diagramType = slot.diagram_type || plan.diagram_type || slot.template_id || plan.template_id || "functional_block_diagram";
     const normalized = normalizeFlowchartData({
       ...response,
       type: "flowchart",
+      diagram_type: diagramType,
       title: cleanMediaText(plan.title || response.title || "Oqim sxemasi", "Oqim sxemasi"),
-    }, { language });
+    }, { language, diagramType });
     return {
       type: "flowchart",
       ...normalized,
-      template_id: slot.template_id || plan.template_id || "classic_grid",
+      diagram_type: diagramType,
+      template_id: diagramType,
       slot_id: slot.slot_id,
       caption: cleanMediaText(buildFlowchartCaption({ ...normalized, caption: response.caption }, plan.purpose, language), normalized.title),
     };
@@ -489,6 +590,54 @@ function fallbackMediaSlot(slot, { chapter, language }) {
     };
   }
   if (slot.type === "chart") {
+    if (slot.diagram_type === "mathematical_graph") {
+      const planText = `${plan.title || ""} ${plan.variable || ""} ${chapter?.title || ""}`.toLocaleLowerCase();
+      const inferredExpression = /\b(?:sin|sinus|sine)\b/.test(planText) ? "sin(x)"
+        : /\b(?:cos|cosinus|cosine)\b/.test(planText) ? "cos(x)"
+          : /\b(?:exp|eksponent|exponential)\b/.test(planText) ? "exp(x)"
+            : /\b(?:sqrt|ildiz|root)\b/.test(planText) ? "sqrt(x)"
+              : /\b(?:parabola|kvadrat|quadratic|square)\b/.test(planText) ? "x**2" : "x";
+      const functions = Array.isArray(plan.functions) && plan.functions.length
+        ? plan.functions
+        : [{ name: plan.function_name || "f(x)", expression: plan.expression || inferredExpression }];
+      const chart = normalizeChartData({
+        ...plan,
+        type: "chart",
+        diagram_type: "mathematical_graph",
+        chartType: "line",
+        title: cleanMediaText(plan.title || `${chapter?.title || "Mavzu"}: matematik funksiya`, "Matematik grafik"),
+        functions,
+        x_min: Number.isFinite(Number(plan.x_min)) ? Number(plan.x_min) : -5,
+        x_max: Number.isFinite(Number(plan.x_max)) ? Number(plan.x_max) : 5,
+        x_label: plan.x_label || "x",
+        y_label: plan.y_label || plan.unit || "f(x)",
+        data_source: plan.data_source || "Matematik funksiya grafigi",
+        caption: cleanMediaText(plan.caption || plan.title || chapter?.title, chapter?.title || "Matematik grafik"),
+      });
+      return { ...chart, slot_id: slot.slot_id, _syntheticFallback: true };
+    }
+    if (slot.diagram_type === "experiment_results") {
+      const proposedLabels = Array.isArray(plan.labels) ? plan.labels.map(value => String(value || "").trim()).filter(Boolean).slice(0, 8) : [];
+      const labels = proposedLabels.length >= 2 ? proposedLabels : ["1-sinov", "2-sinov", "3-sinov"];
+      const proposedSeries = Array.isArray(plan.series) ? plan.series : [];
+      const series = proposedSeries.length
+        ? proposedSeries.slice(0, 5)
+        : [{ name: plan.variable || "Sinov natijasi", values: syntheticChartValues(labels.length, plan.title || chapter?.title || "tajriba") }];
+      const chartType = ["bar", "line"].includes(slot.chartType) ? slot.chartType : "bar";
+      const chart = normalizeChartData({
+        ...plan,
+        type: "chart",
+        diagram_type: "experiment_results",
+        chartType,
+        title: cleanMediaText(plan.title || `${chapter?.title || "Mavzu"}: tajriba natijalari`, "Tajriba natijalari"),
+        labels,
+        series,
+        unit: plan.unit || "",
+        data_source: plan.data_source || "Sintetik illustrativ ma'lumot; real o'lchov emas",
+        caption: cleanMediaText(plan.caption || plan.title || chapter?.title, chapter?.title || "Tajriba natijalari"),
+      });
+      return { ...chart, slot_id: slot.slot_id, _syntheticFallback: true };
+    }
     const [chart] = alignPlannedChartBlocks({
       ...chapter,
       chart_count: 1,
@@ -931,7 +1080,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   console.log("[mustaqil] outline:", outline.chapters.length+" bob, target="+outline.total_words_target+" so'z");
 
   // Slot IDs come from the normalized outline and remain stable through generation and assembly.
-  const mediaSlots = buildMediaSlots(outline.chapters);
+  const mediaSlots = buildMediaSlots(outline.chapters, { topic });
   const slotsByChapter = groupMediaSlotsByChapter(mediaSlots);
   console.log(`[mustaqil] media slotlari: ${mediaSlots.length} ta (${mediaSlots.map(slot => slot.slot_id).join(", ") || "yo'q"})`);
 

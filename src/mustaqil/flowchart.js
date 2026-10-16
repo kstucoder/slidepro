@@ -2,6 +2,7 @@ const { spawn } = require("node:child_process");
 const sharp = require("sharp");
 const { normalizeFlowchartData } = require("./flowchart-data");
 const { getFlowchartTemplate } = require("./flowchart-templates");
+const { classifyGraphvizType, isGraphvizDiagramType } = require("./diagram-types");
 
 const MAX_DOT_BYTES = 64 * 1024;
 const MAX_PNG_BYTES = 8 * 1024 * 1024;
@@ -40,43 +41,60 @@ function wrapFlowchartLabel(value, maxLineLength = FLOWCHART_LABEL_LINE_LENGTH) 
 }
 
 function buildFlowchartDot(input, { wrapLabels = true, ranksepMultiplier = FLOWCHART_HEIGHT_SCALE } = {}) {
-  const flowchart = normalizeFlowchartData(input);
-  const template = getFlowchartTemplate(input?.template_id);
+  const explicitType = input?.diagram_type || input?.template_id;
+  if (explicitType && !isGraphvizDiagramType(explicitType)) {
+    throw new Error(`flowchart: noma'lum diagram_type (${explicitType})`);
+  }
+  const diagramType = explicitType || classifyGraphvizType({
+    topic: input?.title,
+    planTitle: input?.title,
+    purpose: input?.caption,
+  });
+  const template = getFlowchartTemplate(diagramType);
+  const flowchart = normalizeFlowchartData(input, { diagramType: template.id });
   const graphAttrs = template.graphAttrs.map(attribute => {
     const ranksep = attribute.match(/^ranksep="([\d.]+)"$/);
     return ranksep
-      ? `ranksep="${(Number(ranksep[1]) * ranksepMultiplier).toFixed(2)}"`
+      ? `ranksep="${(Number(ranksep[1]) * ranksepMultiplier).toFixed(3)}"`
       : attribute;
   });
   const graphTitle = wrapLabels ? wrapFlowchartLabel(flowchart.title) : flowchart.title;
   const lines = [
     "digraph Flowchart {",
-    `  graph [${[...graphAttrs, 'bgcolor="white"', 'pad="0.18"', 'fontname="DejaVu Sans"', 'labelloc="t"', `label="${escapeDotText(graphTitle)}"`, 'fontsize=18', 'fontcolor="#18324B"'].join(", ")}];`,
-    '  node [color="#457B9D", penwidth=1.4, fontname="DejaVu Sans", fontsize=12, fontcolor="#18324B", margin="0.16,0.10"];',
-    `  edge [${[...template.edgeAttrs, 'fontname="DejaVu Sans"', 'fontsize=10', 'fontcolor="#40566B"'].join(", ")}];`,
+    `  graph [${[...graphAttrs, 'bgcolor="white"', 'pad="0.18"', 'fontname="Times New Roman"', 'labelloc="t"', `label="${escapeDotText(graphTitle)}"`, 'fontsize=18', 'fontcolor="#18324B"'].join(", ")}];`,
+    '  node [color="#457B9D", penwidth=1.4, fontname="Times New Roman", fontsize=12, fontcolor="#18324B", margin="0.16,0.10"];',
+    `  edge [${[...template.edgeAttrs, 'fontname="Times New Roman"', 'fontsize=10', 'fontcolor="#40566B"'].join(", ")}];`,
   ];
 
-  const nodeLine = node => {
+  const nodeLine = (node, index) => {
     const label = escapeDotText(wrapLabels ? wrapFlowchartLabel(node.label) : node.label);
-    const options = template.nodeAttrs[node.kind] || template.nodeAttrs.process;
+    const options = template.nodeAttrs[node.kind];
     return `    ${node.id} [label="${label}", ${options}];`;
   };
 
-  flowchart.nodes.forEach(node => lines.push(nodeLine(node)));
-  const rows = [flowchart.nodes.slice(0, 3), flowchart.nodes.slice(3, 5)];
-  for (const row of rows) {
-    lines.push(`  { rank=same; ${row.map(node => node.id).join("; ")}; }`);
-    for (let index = 0; index < row.length - 1; index++) {
-      lines.push(`  ${row[index].id} -> ${row[index + 1].id} [style=invis, weight=100, arrowhead=none];`);
-    }
-  }
-  lines.push(`  ${rows[0][2].id} -> ${rows[1][0].id} [style=invis, weight=100, arrowhead=none];`);
+  flowchart.nodes.forEach((node, index) => lines.push(nodeLine(node, index)));
 
   for (const edge of flowchart.edges) {
     const edgeAttributes = [];
     if (edge.label) edgeAttributes.push(`label="${escapeDotText(edge.label)}"`);
+    const fromIndex = flowchart.nodes.findIndex(node => node.id === edge.from);
+    const toIndex = flowchart.nodes.findIndex(node => node.id === edge.to);
+    if (template.id === "pid_control_system" && edge.from === flowchart.nodes.find(node => node.kind === "sensor")?.id) {
+      edgeAttributes.push('constraint=false', 'minlen=2', 'color="#A15C45"');
+    } else if (template.id === "algorithm_flowchart" && toIndex <= fromIndex) {
+      edgeAttributes.push('constraint=false', 'minlen=2');
+    }
     const attributes = edgeAttributes.length ? ` [${edgeAttributes.join(", ")}]` : "";
     lines.push(`  ${edge.from} -> ${edge.to}${attributes};`);
+  }
+
+  if (template.id === "process_sequence") {
+    for (let index = 0; index < flowchart.nodes.length - 1; index++) {
+      const current = flowchart.nodes[index];
+      const next = flowchart.nodes[index + 1];
+      if (flowchart.edges.some(edge => edge.from === current.id && edge.to === next.id)) continue;
+      lines.push(`  ${current.id} -> ${next.id} [style=invis, weight=100, arrowhead=none];`);
+    }
   }
   lines.push("}");
   return lines.join("\n");

@@ -33,59 +33,75 @@ test("Graphviz oqim sxemasi xavfsiz JSON sxemasi va DOT string escaping bilan tu
   assert.equal(normalizeFlowchartData(validFlowchart).nodes.length, 5);
   const dot = buildFlowchartDot(validFlowchart);
   assert.match(dot, /digraph Flowchart/);
-  assert.match(dot, /ranksep="0\.51"/, "qatorlar oralig‘i balandlikni 50% oshirish uchun kengayadi");
+  assert.match(dot, /ranksep="0\.825"/, "tanlangan shablonning qator oralig‘i 50% kengayadi");
   assert.ok(dot.includes(`label="Suvni tozalash${String.fromCharCode(92)}ntarkibi va aloqalari"`), "uzun sarlavha kenglikni toraytirib, balandlikni oshirish uchun o‘raladi");
   assert.ok(dot.includes(`Filtrlash ${String.fromCharCode(92)}"`) && dot.includes(`${String.fromCharCode(92)}nsystem`), "o‘ralgan label ichidagi qo‘shtirnoq Graphviz uchun escape qilinsin");
   assert.match(dot, /Suv sifati/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, id: 'x; system("bad")' }) }), /xavfsiz format/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [{ from: "source", to: "missing" }, ...validFlowchart.edges.slice(1)] }), /mavjud bo'lmagan node/);
-  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, kind: "record" }) }), /noma'lum node turi/);
-  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.slice(0, 4) }), /aynan 5 ta/);
-  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: [...validFlowchart.nodes, { id: "extra", label: "Qo'shimcha", kind: "process" }] }), /aynan 5 ta/);
+  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, kind: "record" }) }), /noma'lum yoki mos bo'lmagan node turi/);
+  assert.equal(normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.slice(0, 4), edges: validFlowchart.edges.slice(0, 3) }).nodes.length, 4,
+    "mazmunan yetarli bo‘lsa 2–5 tugun ishlatish mumkin");
+  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.slice(0, 1), edges: [] }), /2–5 ta node/);
+  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: [...validFlowchart.nodes, { id: "extra", label: "Qo'shimcha", kind: "process" }] }), /2–5 ta node/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, label: "Bir ikki uch to'rt besh olti" }) }), /1–5 ta qisqa so'z/);
-  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [...validFlowchart.edges, { from: "quality", to: "source" }] }), /sikl yasamasin/);
+  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [...validFlowchart.edges, { from: "quality", to: "source" }] }), /bu diagramma turida sikl bo'lmasin/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [...validFlowchart.edges, { from: "filter", to: "filter" }] }), /o'ziga ulanmasin/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [...validFlowchart.edges, { from: "source", to: "filter" }] }), /takrorlangan aloqa/);
-  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index === 2 ? { ...node, kind: "decision" } : node) }), /noma'lum node turi/);
+  assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index === 2 ? { ...node, kind: "decision" } : node) }), /mos bo'lmagan node turi/);
 });
 
-test("Graphviz shablonlari strukturaviy jihatdan farq qiladi va har biri yaroqli PNG render beradi", () => {
-  assert.ok(FLOWCHART_TEMPLATES.length >= 10);
+test("beshta Graphviz semantik turi to‘g‘ri shakl va yo‘nalishda yaroqli PNG render beradi", () => {
+  assert.equal(FLOWCHART_TEMPLATES.length, 5);
   assert.equal(new Set(FLOWCHART_TEMPLATES.map(template => template.id)).size, FLOWCHART_TEMPLATES.length);
-  assert.ok(FLOWCHART_TEMPLATES.every(template => template.name && template.description && template.guidance));
-  const allowedKinds = ["input", "output", "process"];
-  for (const template of FLOWCHART_TEMPLATES) {
-    assert.deepEqual(Object.keys(template.nodeAttrs).sort(), allowedKinds, `${template.id}: faqat mazmuniy tugun turlari qo‘llansin`);
-  }
-  const processShapes = new Set(FLOWCHART_TEMPLATES.map(template => /shape=([a-z]+)/.exec(template.nodeAttrs.process)?.[1]));
-  const allShapes = new Set(FLOWCHART_TEMPLATES.flatMap(template => Object.values(template.nodeAttrs)
-    .map(attributes => /shape=([a-z]+)/.exec(attributes)?.[1])));
-  assert.ok(["box", "ellipse", "circle", "hexagon"].every(shape => processShapes.has(shape)), "umumiy tushunchalar uchun rect, oval, doira va hexagon uslublari bo‘lsin");
-  assert.ok(allShapes.has("parallelogram"), "mavzuda mos input/output bo‘lsa parallelogram aksenti mavjud bo‘lsin");
-  const templateFlowchart = {
-    ...validFlowchart,
-    edges: [...validFlowchart.edges, { from: "source", to: "quality", label: "" }],
+  assert.ok(FLOWCHART_TEMPLATES.every(template => template.name && template.description && template.direction && template.topologyGuidance));
+  const examples = {
+    functional_block_diagram: validFlowchart,
+    algorithm_flowchart: {
+      diagram_type: "algorithm_flowchart", title: "Suv sifatini tekshirish algoritmi",
+      nodes: [{ id: "start", label: "Boshlash", kind: "start" }, { id: "measure", label: "Suvni o'lchash", kind: "process" }, { id: "decision", label: "Mezonni tekshirish", kind: "decision" }, { id: "treat", label: "Suvni tozalash", kind: "process" }, { id: "end", label: "Tugatish", kind: "end" }],
+      edges: [{ from: "start", to: "measure" }, { from: "measure", to: "decision" }, { from: "decision", to: "treat", label: "Ha" }, { from: "decision", to: "end", label: "Yo'q" }, { from: "treat", to: "end" }],
+    },
+    pid_control_system: {
+      diagram_type: "pid_control_system", title: "PID boshqaruv konturi",
+      nodes: [{ id: "ref", label: "Topshiriq signali", kind: "input" }, { id: "sum", label: "Xatolik yig'indisi", kind: "sum" }, { id: "pid", label: "PID rostlagich", kind: "controller" }, { id: "plant", label: "Boshqaruv obyekti", kind: "plant" }, { id: "sensor", label: "O'lchov datchigi", kind: "sensor" }],
+      edges: [{ from: "ref", to: "sum" }, { from: "sum", to: "pid" }, { from: "pid", to: "plant" }, { from: "plant", to: "sensor" }, { from: "sensor", to: "sum", label: "Teskari aloqa" }],
+    },
+    uml_software_architecture: {
+      diagram_type: "uml_software_architecture", title: "Ilova komponentlari",
+      nodes: [{ id: "api", label: "API komponenti", kind: "component" }, { id: "service", label: "Domen klassi", kind: "class" }, { id: "db", label: "Ma'lumotlar bazasi", kind: "database" }],
+      edges: [{ from: "api", to: "service", label: "calls" }, { from: "service", to: "db", label: "reads" }],
+    },
+    process_sequence: {
+      diagram_type: "process_sequence", title: "Suvni tozalash bosqichlari",
+      nodes: [{ id: "input", label: "Xom suv olish", kind: "input" }, { id: "filter", label: "Suvni filtrlash", kind: "step" }, { id: "output", label: "Toza suv uzatish", kind: "output" }],
+      edges: [{ from: "input", to: "filter" }, { from: "filter", to: "output" }],
+    },
   };
-  const dots = FLOWCHART_TEMPLATES.map(template => buildFlowchartDot({ ...templateFlowchart, template_id: template.id }));
-  assert.equal(new Set(dots).size, FLOWCHART_TEMPLATES.length, "har bir uslub alohida DOT tuzilishi yaratadi");
-
-  const byId = Object.fromEntries(FLOWCHART_TEMPLATES.map((template, index) => [template.id, dots[index]]));
-  assert.match(byId.clean_outline, /rankdir=TB/);
-  assert.match(byId.pastel_ovals, /rankdir=TB/);
-  assert.doesNotMatch(Object.values(byId).join("\n"), /rankdir=(?:LR|BT)|shape=plaintext|subgraph cluster_|circo|twopi/);
-
-  FLOWCHART_TEMPLATES.forEach((template, index) => {
+  const byId = Object.fromEntries(FLOWCHART_TEMPLATES.map(template => [template.id, template]));
+  const dots = FLOWCHART_TEMPLATES.map(template => buildFlowchartDot({ ...examples[template.id], diagram_type: template.id }));
+  for (const [index, template] of FLOWCHART_TEMPLATES.entries()) {
     const dot = dots[index];
-    const rowGroups = [...dot.matchAll(/\{ rank=same; ([^}]+) \}/g)].map(match => match[1].split(";").map(value => value.trim()).filter(Boolean));
-    assert.deepEqual(rowGroups.map(row => row.length), [3, 2], `${template.id}: besh shakl 3+2 qatorda joylashishi kerak`);
-    assert.equal((dot.match(/^\s{4}[A-Za-z][A-Za-z0-9_]* \[label=/gm) || []).length, 5, `${template.id}: aynan beshta ko'rinadigan shakl bo'lsin`);
-    const rendered = spawnSync("dot", [`-K${template.layoutEngine}`, "-Tpng"], {
-      input: dots[index],
-      maxBuffer: 4 * 1024 * 1024,
-    });
+    assert.match(dot, /fontname="Times New Roman"/, `${template.id}: matn Times New Roman deb belgilansin`);
+    if (template.id === "algorithm_flowchart") {
+      assert.match(dot, /rankdir=TB/);
+      assert.match(dot, /shape=diamond/);
+      assert.match(dot, /shape=ellipse/);
+    }
+    if (["functional_block_diagram", "pid_control_system", "process_sequence"].includes(template.id)) assert.match(dot, /rankdir=LR/);
+    if (template.id === "pid_control_system") assert.match(dot, /constraint=false/);
+    if (template.id === "uml_software_architecture") {
+      assert.match(dot, /rankdir=TB/);
+      assert.match(dot, /shape=component/);
+    }
+    if (template.id === "process_sequence") assert.match(dot, /rankdir=LR/);
+    const nodeCount = (dot.match(/^    [A-Za-z][A-Za-z0-9_]* \[label=/gm) || []).length;
+    assert.ok(nodeCount >= 2 && nodeCount <= 5, `${template.id}: 2–5 ta node bo‘lsin`);
+    const rendered = spawnSync("dot", [`-K${template.layoutEngine}`, "-Tpng"], { input: dot, maxBuffer: 4 * 1024 * 1024 });
     assert.equal(rendered.status, 0, `${template.id}: ${rendered.stderr?.toString("utf8") || "Graphviz render xatosi"}`);
     assert.equal(rendered.stdout.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", `${template.id} PNG chiqarsin`);
-  });
+  }
+  assert.deepEqual(byId.algorithm_flowchart.allowedKinds, ["start", "end", "process", "decision", "input", "output"]);
 });
 
 test("o‘zbekcha ishda Graphviz ichidagi inglizcha title, tugun va qirra matni saqlanadi", () => {
@@ -215,24 +231,24 @@ test("outline va bob promptlari Graphviz flowchartni JSON media sifatida so'rayd
     outline: { meta: { title: "Suvni tozalash" }, chapters: [chapter] },
     language: "o'zbek", chapterIndex: 0, totalChapters: 1,
   });
-  assert.match(prompt, /Graphviz sodda sxemasi rejasi/);
-  assert.match(prompt, /aynan 5 ta/i);
-  assert.match(prompt, /3\+2/);
+  assert.match(prompt, /Graphviz diagramma rejasi/);
+  assert.match(prompt, /Umumiy limit 2–5 tugun/);
+  assert.match(prompt, /process_sequence/);
   assert.match(prompt, /mavzu, bob va reja maqsadiga bevosita mos/);
-  assert.match(prompt, /Bu algoritm emas/);
-  assert.match(prompt, /Bu algoritm emas: start\/end/);
-  assert.match(prompt, /inglizcha so'zlar qolishi mumkin/);
-  assert.match(prompt, /captionni o'zbekcha yozib, "Izoh:"/);
-  assert.match(prompt, /har bir label uchun alohida tarjima/);
-  assert.match(prompt, /"type":"flowchart"/);
-  assert.match(prompt, /DOT manbasini hech qachon JSON ichida yozma/);
-  const mediaPrompt = mediaSlotPrompt({ type: "flowchart", slot_id: "ch1:flowchart:1", plan: chapter.flowchart_plans[0] }, {
+  assert.match(prompt, /jarayon qadamlarini chapdan o‘ngga/);
+  assert.match(prompt, /Algoritm bo‘lmasa start\/end\/decision belgilarini ishlatma/);
+  assert.match(prompt, /O‘zbekcha captionni "Izoh:"/);
+  assert.match(prompt, /diagram_type="process_sequence"/);
+  assert.match(prompt, /Graphviz DOT yoki kodni JSONga kiritma/);
+  const mediaPrompt = mediaSlotPrompt({ type: "flowchart", slot_id: "ch1:flowchart:1", diagram_type: "process_sequence", template_id: "process_sequence", plan: chapter.flowchart_plans[0] }, {
     topic: "Suvni tozalash", language: "o'zbek",
   });
-  assert.match(mediaPrompt, /inglizcha yoki o'zbekcha/);
-  assert.match(mediaPrompt, /aynan 5 node/i);
-  assert.match(mediaPrompt, /mavzu, bob va reja maqsadiga bevosita mos/);
-  assert.match(mediaPrompt, /har bir label uchun tarjima\/glossariy shart emas/);
+  assert.match(mediaPrompt, /o‘zbekcha yoki inglizcha/);
+  assert.match(mediaPrompt, /2–5 node/);
+  assert.match(mediaPrompt, /Mavzu, bob va reja maqsadiga bevosita mos/);
+  assert.match(mediaPrompt, /Grafik yo‘nalishi: chapdan o‘ngga/);
+  assert.match(mediaPrompt, /bajarilish tartibida chapdan o‘ngga/);
+  assert.match(mediaPrompt, /Faqat quyidagi kind qiymatlari/);
 });
 
 test("rejalashtirilgan flowchartning yo‘qligi yoki yaroqsiz JSON’i renderdan oldin rad etiladi", () => {

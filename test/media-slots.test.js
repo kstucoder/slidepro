@@ -19,6 +19,7 @@ const {
   generateMediaSlot,
 } = require("../src/mustaqil/generate");
 const { normalizeChartData } = require("../src/mustaqil/chart-data");
+const { normalizeFlowchartData } = require("../src/mustaqil/flowchart-data");
 const { cleanMediaText } = require("../src/mustaqil/media-captions");
 const { FLOWCHART_TEMPLATES } = require("../src/mustaqil/flowchart-templates");
 
@@ -56,34 +57,36 @@ test("outline media rejalari o'zgarmas slot ID'lari va tegishli turlarni beradi"
   assert.deepEqual(groupMediaSlotsByChapter(slots).get("ch1").map(slot => slot.slot_id), slots.map(slot => slot.slot_id));
 });
 
-test("har hujjatdagi Graphviz slotlari tasodifiy, takrorlanmas va inject qilinadigan uslub oladi", () => {
-  const chapters = Array.from({ length: 5 }, (_, index) => ({
-    id: `ch${index + 1}`,
-    title: `Jarayon ${index + 1}`,
-    flowchart_count: 1,
-    flowchart_plans: [{ title: `Jarayon ${index + 1}`, purpose: `Jarayon ${index + 1} bosqichlari` }],
+test("Graphviz slotlari mazmunga ko‘ra besh semantik turdan birini deterministik tanlaydi", () => {
+  const scenarios = [
+    ["Funksional blok-sxema", "Kirish, qayta ishlash va chiqish bloklari", "functional_block_diagram"],
+    ["Algoritm blok-sxemasi", "Algoritm amallari va shart tarmoqlari", "algorithm_flowchart"],
+    ["PID boshqaruv tizimi", "Sensor teskari aloqali PID konturi", "pid_control_system"],
+    ["UML dastur arxitekturasi", "Dastur komponentlari va klasslar", "uml_software_architecture"],
+    ["Jarayonlar ketma-ketligi", "Haqiqiy jarayon bosqichlari", "process_sequence"],
+  ];
+  const chapters = scenarios.map(([title, purpose], index) => ({
+    id: `semantic-${index + 1}`, title, flowchart_count: 1, flowchart_plans: [{ title, purpose }],
   }));
-  const seededRandom = seed => {
-    let state = seed >>> 0;
-    return () => {
-      state = (state * 1664525 + 1013904223) >>> 0;
-      return state / 0x100000000;
-    };
-  };
-  const first = buildMediaSlots(chapters, { random: seededRandom(12345) }).filter(slot => slot.type === "flowchart");
-  const repeat = buildMediaSlots(chapters, { random: seededRandom(12345) }).filter(slot => slot.type === "flowchart");
-  const alternate = buildMediaSlots(chapters, { random: seededRandom(67890) }).filter(slot => slot.type === "flowchart");
-  const ids = first.map(slot => slot.template_id);
-
-  assert.ok(FLOWCHART_TEMPLATES.length >= 10);
-  assert.equal(new Set(ids).size, first.length, "bir hujjatda Graphviz shabloni takrorlanmasin");
-  assert.deepEqual(repeat.map(slot => slot.template_id), ids, "bir xil inject qilingan tasodifiylik qayta ishlab bo'ladigan bo'lsin");
-  assert.notDeepEqual(alternate.map(slot => slot.template_id), ids, "boshqa tasodifiy ketma-ketlik boshqa assignment bera olsin");
-  first.forEach(slot => {
-    assert.equal(slot.plan.template_id, slot.template_id);
+  const selected = buildMediaSlots(chapters, { topic: "Mavzuga tegishli chizmalar" }).filter(slot => slot.type === "flowchart");
+  assert.equal(FLOWCHART_TEMPLATES.length, 5);
+  assert.deepEqual(selected.map(slot => slot.diagram_type), scenarios.map(([, , type]) => type));
+  selected.forEach(slot => {
+    assert.equal(slot.template_id, slot.diagram_type);
+    assert.equal(slot.plan.diagram_type, slot.diagram_type);
     assert.equal(slot.plan.template_name, slot.template_name);
     assert.ok(slot.plan.template_guidance);
   });
+});
+
+test("Matplotlib slotlari matematik grafik va tajriba natijalarini ajratadi", () => {
+  const chapters = [
+    { id: "math", title: "Matematik funksiyalar grafigi", chart_count: 1, chart_type: "bar", chart_plans: [{ title: "Parabola", variable: "y = x kvadrat" }] },
+    { id: "lab", title: "Tajriba natijalari", chart_count: 1, chart_type: "pie", chart_plans: [{ title: "Harorat bo‘yicha sinov", variable: "Vaqt bo‘yicha o‘lchangan konsentratsiya" }] },
+  ];
+  const charts = buildMediaSlots(chapters).filter(slot => slot.type === "chart");
+  assert.deepEqual(charts.map(slot => slot.diagram_type), ["mathematical_graph", "experiment_results"]);
+  assert.deepEqual(charts.map(slot => slot.chartType), ["line", "line"], "Matematik funksiya hamda vaqt bo‘yicha tajriba natijasi chiziqli ko‘rinishda saqlansin");
 });
 
 test("prose prompt media payloadini so'ramaydi, markerlarni esa barqaror ID bilan joylashtiradi", () => {
@@ -136,28 +139,34 @@ test("media LLM so'rovlari formula, grafik, Graphviz va jadval uchun qisqa struk
     assert.match(prompt, new RegExp(`"type":"${type}"`));
   }
   const flowPrompt = mediaSlotPrompt({
-    slot_id: "ch1:flowchart:1", type: "flowchart", template_id: "two_row_color",
-    plan: { title: "Jarayon", purpose: "Suvni tozalash bosqichlari", template_id: "two_row_color" },
+    slot_id: "ch1:flowchart:1", type: "flowchart", diagram_type: "uml_software_architecture", template_id: "uml_software_architecture",
+    plan: { title: "Suvni tozalash dasturiy modullari", purpose: "Tizim komponentlari va ma'lumotlar bazasi aloqalari", diagram_type: "uml_software_architecture" },
   }, {
     topic: "Suvni tozalash", language: "o'zbek",
     chapter: { title: "Filtrlash va sifat nazorati", role: "methodology" },
   });
   assert.match(flowPrompt, /DOT yoki kod qaytarma/);
-  assert.match(flowPrompt, /Tanlangan va o‘zgarmas shablon: two_row_color/);
-  assert.match(flowPrompt, /Ikki qatorli rangli bloklar/);
+  assert.match(flowPrompt, /Tanlangan va o‘zgarmas diagram_type: uml_software_architecture/);
+  assert.match(flowPrompt, /haqiqiy dasturiy komponent, klass, interfeys/);
+  assert.match(flowPrompt, /Graphviz/i);
   assert.match(flowPrompt, /Suvni tozalash/);
-  assert.match(flowPrompt, /Filtrlash va sifat nazorati/);
-  assert.match(flowPrompt, /generic to‘ldiruvchi yorliqlar ishlatma/);
-  assert.match(flowPrompt, /har bir tugun, aloqa va caption mavzu, bob va reja maqsadiga bevosita mos/);
-  assert.match(flowPrompt, /aynan 5 node/i);
+  assert.match(flowPrompt, /Dastur arxitekturasi bo‘lmagan mavzuda bu turdan foydalanma/);
+  assert.match(flowPrompt, /generic to‘ldiruvchilar/);
+  assert.match(flowPrompt, /Mavzu, bob va reja maqsadiga bevosita mos/);
+  assert.match(flowPrompt, /2–5 node/);
   const chartPrompt = mediaSlotPrompt({ slot_id: "ch1:chart:1", type: "chart", chartType: "bar", plan: {} }, { topic: "Sinov", language: "uz" });
   assert.match(chartPrompt, /data_source maydonini bo'sh qoldir/i);
-  assert.match(chartPrompt, /haqiqiy o'lchov yoki manbadan olingan bo'lishi shart emas/i);
-  assert.match(chartPrompt, /real hayotda uchrashi mumkin bo'lgan diapazon, birlik va naqshlar/i);
-  assert.match(chartPrompt, /ishonarli hamda o'zaro izchil qiymatlar/i);
-  assert.match(chartPrompt, /manba nomini uydirma qilma/i);
+  assert.match(chartPrompt, /mavzu, reja va kontekstga mos hamda o'zaro izchil/);
+  assert.match(chartPrompt, /mavzuga aloqasiz ma'lumot yoki manba uydirma qilma/);
+  assert.match(chartPrompt, /manba uydirma qilma/i);
   assert.match(chartPrompt, /pie uchun ko'pi bilan 5 label va manfiy bo'lmagan qiymatlar/i);
   assert.match(chartPrompt, /Sarlavha\/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma/i);
+  const mathPrompt = mediaSlotPrompt({ slot_id: "ch1:chart:2", type: "chart", diagram_type: "mathematical_graph", chartType: "line", plan: { title: "Parabola" } }, { topic: "Matematik funksiya", language: "uz" });
+  assert.match(mathPrompt, /Matplotlib matematik grafik/);
+  assert.match(mathPrompt, /501 namunaviy nuqtani hisoblab/);
+  const experimentalPrompt = mediaSlotPrompt({ slot_id: "ch1:chart:3", type: "chart", diagram_type: "experiment_results", chartType: "bar", plan: { title: "Tajriba" } }, { topic: "Tajriba natijalari", language: "uz" });
+  assert.match(experimentalPrompt, /Matplotlib tajriba natijalari diagrammasi/);
+  assert.match(experimentalPrompt, /1–5 ta nomlangan series/);
   const tablePrompt = mediaSlotPrompt({ slot_id: "ch1:table:1", type: "table", plan: {} }, { topic: "Sinov", language: "uz" });
   assert.match(tablePrompt, /Haqiqiy manba yoki o'lchov bo'lishi shart emas/i);
   assert.match(tablePrompt, /realistik tafsilotlar va.*ishonarli raqamlar/i);
@@ -196,6 +205,49 @@ test("chart fallback haqiqiy o'lchov sifatida ko'rsatilmaydi, strukturasi render
   assert.match(fallback.data_source, /sintetik illustrativ ma'lumot; real o'lchov emas/i);
   assert.doesNotMatch(fallback.caption, /sintetik|real o'lchov emas/i);
   assert.equal(normalizeChartData(fallback).values.length, 5);
+});
+
+test("Matplotlib fallback rejalashtirilgan funksiya va tajriba qiymatlarini saqlaydi", () => {
+  const math = fallbackMediaSlot({
+    slot_id: "ch1:chart:math", type: "chart", diagram_type: "mathematical_graph", chartType: "line",
+    plan: { title: "Parabola", functions: [{ name: "f(x)", expression: "x**2" }], x_min: -3, x_max: 3 },
+  }, { chapter: { id: "ch1", title: "Matematik tahlil" }, language: "o'zbek" });
+  assert.equal(math.diagram_type, "mathematical_graph");
+  assert.equal(math.chartType, "line");
+  assert.deepEqual(math.functions, [{ name: "f(x)", expression: "x**2" }]);
+  assert.equal(math.x_min, -3);
+  assert.equal(math.x_max, 3);
+
+  const experiment = fallbackMediaSlot({
+    slot_id: "ch1:chart:experiment", type: "chart", diagram_type: "experiment_results", chartType: "bar",
+    plan: { title: "Harorat sinovi", labels: ["20 °C", "30 °C"], series: [{ name: "Nazorat", values: [4.2, 3.8] }], unit: "mg/L" },
+  }, { chapter: { id: "ch1", title: "Tajriba natijalari" }, language: "o'zbek" });
+  assert.equal(experiment.diagram_type, "experiment_results");
+  assert.deepEqual(experiment.labels, ["20 °C", "30 °C"]);
+  assert.deepEqual(experiment.series, [{ name: "Nazorat", values: [4.2, 3.8] }]);
+});
+
+test("sabab–oqibat va UML ierarxik fallbacklari besh tugun limitini va yo‘nalishini saqlaydi", () => {
+  const causeEffect = fallbackMediaSlot({
+    slot_id: "ch1:flowchart:causes", type: "flowchart", diagram_type: "functional_block_diagram",
+    plan: {
+      title: "Sabab–oqibat tahlili", purpose: "Omillarning asosiy muammoga ta'siri",
+      causes: ["Inson omili", "Usul", "Vositalar", "Ma'lumotlar"], outcome: "Asosiy muammo",
+    },
+  }, { chapter: { id: "ch1", title: "Sifat muammosining omillari" }, language: "o'zbek" });
+  const normalizedCauseEffect = normalizeFlowchartData(causeEffect);
+  assert.equal(normalizedCauseEffect.nodes.length, 5);
+  assert.ok(normalizedCauseEffect.nodes.slice(0, 4).every(node => node.kind === "input"));
+  assert.equal(normalizedCauseEffect.nodes.at(-1).kind, "output");
+  assert.ok(normalizedCauseEffect.edges.every(edge => edge.to === normalizedCauseEffect.nodes.at(-1).id));
+
+  const hierarchy = fallbackMediaSlot({
+    slot_id: "ch1:flowchart:hierarchy", type: "flowchart", diagram_type: "uml_software_architecture",
+    plan: { title: "Dastur arxitekturasi ierarxiyasi", purpose: "Yuqori modul va quyi komponentlar" },
+  }, { chapter: { id: "ch1", title: "Tizim arxitekturasi" }, language: "o'zbek" });
+  const normalizedHierarchy = normalizeFlowchartData(hierarchy);
+  assert.ok(normalizedHierarchy.nodes.length >= 2 && normalizedHierarchy.nodes.length <= 5);
+  assert.ok(normalizedHierarchy.edges.every(edge => edge.from === normalizedHierarchy.nodes[0].id));
 });
 
 test("media chart natijasi va formula reja bo'yicha normallashtiriladi", () => {
@@ -277,7 +329,9 @@ test("chart va jadval bitta AI so'rovi bilan yakunlanadi, bo'sh javob non-empty 
     assert.deepEqual(blankResponse.item.rows, fallbackMediaSlot({
       slot_id: "ch1:table:1", type: "table", ordinal: 1, plan: { title: "Sinov jadvali" },
     }, { chapter: { id: "ch1", title: "Tahlil" }, language: "o'zbek" }).rows);
-    assert.ok(requests.every(prompt => /(?:haqiqiy manba|qiymatlar haqiqiy o'lchov).*bo'lishi shart emas/i.test(prompt)));
+    assert.match(requests[0], /mavzu, reja va kontekstga mos hamda o'zaro izchil/);
+    assert.match(requests[0], /data_source maydonini bo'sh qoldir/);
+    assert.match(requests[1], /Haqiqiy manba yoki o'lchov bo'lishi shart emas/i);
   } finally {
     global.fetch = originalFetch;
   }
@@ -295,9 +349,10 @@ test("yaroqsiz Graphviz ma'lumoti retryda bir xil shablonni saqlab, render qilin
     }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   };
 
-  const template = FLOWCHART_TEMPLATES.find(item => item.id === "two_row_color");
+  const template = FLOWCHART_TEMPLATES.find(item => item.id === "functional_block_diagram");
   const slot = {
     slot_id: "ch1:flowchart:1", type: "flowchart", ordinal: 1,
+    diagram_type: template.id,
     template_id: template.id,
     plan: {
       title: "Suvni tozalash: filtrlash oqimi",
@@ -305,7 +360,7 @@ test("yaroqsiz Graphviz ma'lumoti retryda bir xil shablonni saqlab, render qilin
       template_id: template.id,
       template_name: template.name,
       template_description: template.description,
-      template_guidance: template.guidance,
+      template_guidance: template.topologyGuidance,
     },
   };
 
@@ -321,16 +376,18 @@ test("yaroqsiz Graphviz ma'lumoti retryda bir xil shablonni saqlab, render qilin
     assert.equal(generated.item.nodes.length, 5);
     assert.ok(generated.item.nodes.every(node => node.label.trim()));
     assert.ok(generated.item.nodes.every(node => ["input", "process", "output"].includes(node.kind)));
+    assert.equal(generated.item.nodes[0].kind, "input");
+    assert.equal(generated.item.nodes.at(-1).kind, "output");
     assert.match(generated.item.nodes.map(node => node.label).join(" "), /Suvni|filtrlash|sifat/i, "fallback tugunlari reja va bo‘limdagi mavzu atamalaridan tuzilsin");
     assert.doesNotMatch(generated.item.nodes.map(node => node.label).join(" "), /Boshlash|Yakunlash|Start|Finish/i);
     assert.ok(Buffer.isBuffer(generated.image.buf) && generated.image.buf.length > 0);
     assert.equal(prompts.length, 2, "yaroqsiz data retry qilinadi");
     assert.equal(prompts[0], prompts[1], "retry paytida shablon assignmenti o‘zgarmaydi");
-    assert.match(prompts[0], /Tanlangan va o‘zgarmas shablon: two_row_color/);
+    assert.match(prompts[0], /Tanlangan va o‘zgarmas diagram_type: functional_block_diagram/);
     assert.match(prompts[0], /Suvni tozalash/);
     assert.match(prompts[0], /filtrlash va sifat mezonini tekshirish/i);
-    assert.match(prompts[0], /har bir tugun, aloqa va caption mavzu, bob va reja maqsadiga bevosita mos bo‘lsin/);
-    assert.match(prompts[0], /generic to‘ldiruvchi yorliqlar ishlatma/);
+    assert.match(prompts[0], /Mavzu, bob va reja maqsadiga bevosita mos/);
+    assert.match(prompts[0], /generic to‘ldiruvchilar/);
   } finally {
     global.fetch = originalFetch;
   }

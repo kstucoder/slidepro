@@ -4,6 +4,7 @@
 
 const sharp = require("sharp");
 const { normalizeChartData } = require("./chart-data");
+const { renderMatplotlibChart } = require("./matplotlib");
 
 const COLORS = ["#2E8AA8", "#E0A444", "#1FA35A", "#C44536", "#73304A", "#16B0A0", "#5E7079", "#B5513F"];
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -89,7 +90,7 @@ function barSVG({ labels, values, title = "", unit = "" }) {
     ticks += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="#e8e8e8" stroke-width="0.8"/>`;
     ticks += `<text x="${PL - 8}" y="${y}" dy="4" text-anchor="end" font-size="10" fill="#777">${tickText(value)}</text>`;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="Times New Roman, Liberation Serif, serif">
   <text x="${W / 2}" y="28" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">${esc(title)}</text>
   ${unit ? `<text x="${PL - 10}" y="${PT - 8}" text-anchor="middle" font-size="10" fill="#999">${esc(unit)}</text>` : ""}
   <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT + cH}" stroke="#999" stroke-width="1.2"/>
@@ -124,7 +125,7 @@ function lineSVG({ labels, values, title = "", unit = "" }) {
     ticks += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="#e8e8e8" stroke-width="0.8"/>`;
     ticks += `<text x="${PL - 8}" y="${y}" dy="4" text-anchor="end" font-size="10" fill="#777">${tickText(value)}</text>`;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="Times New Roman, Liberation Serif, serif">
   <text x="${W / 2}" y="28" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">${esc(title)}</text>
   ${unit ? `<text x="${PL - 10}" y="${PT - 8}" text-anchor="middle" font-size="10" fill="#999">${esc(unit)}</text>` : ""}
   <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT + cH}" stroke="#999" stroke-width="1.2"/>
@@ -159,7 +160,7 @@ function pieSVG({ labels, values, title = "" }) {
     legend += `<rect x="320" y="${legendY - 10}" width="16" height="16" fill="${color}" rx="2"/><text x="343" y="${legendY + 2}" font-size="12" fill="#333">${esc(labels[i])} (${percent}%)</text>`;
     angle += delta;
   });
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="background:white" font-family="Times New Roman, Liberation Serif, serif">
   <text x="${W / 2}" y="24" text-anchor="middle" font-size="15" font-weight="bold" fill="#111">${esc(title)}</text>
   ${slices}${legend}
 </svg>`;
@@ -167,6 +168,9 @@ function pieSVG({ labels, values, title = "" }) {
 
 async function renderChart(chart) {
   const { chartType, labels, values, title, unit, caption } = normalizeChartData(chart);
+  if (["mathematical_graph", "experiment_results"].includes(chart.diagram_type)) {
+    return renderMatplotlibChart({ ...chart, chartType, labels, values, title, unit });
+  }
   let svg, width, height;
   if (chartType === "line") { svg = lineSVG({ labels, values, title: title || caption || "", unit }); width = 600; height = 320; }
   else if (chartType === "pie") { svg = pieSVG({ labels, values, title: title || caption || "" }); width = 580; height = 300; }

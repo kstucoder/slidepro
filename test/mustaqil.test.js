@@ -63,7 +63,7 @@ test("chiqarishdan oldin yaratilgan chart/formula soni va formula ifodasi rejaga
   const generated = [
     { content: [] },
     { content: [
-      { type: "chart", labels: ["A", "B"], values: [1, 2], data_source: "namunaviy sintetik ma'lumot" },
+      { type: "chart", chartType: "bar", labels: ["A", "B"], values: [1, 2], data_source: "namunaviy sintetik ma'lumot" },
       { type: "formula", latex: "\\frac{a}{ b }" },
     ] },
     { content: [] },
@@ -74,7 +74,7 @@ test("chiqarishdan oldin yaratilgan chart/formula soni va formula ifodasi rejaga
     : chapter);
   assert.throws(() => validatePlannedMedia(missingChart, planned), /chart 0\/1/);
   const extraChart = generated.map((chapter, index) => index === 1
-    ? { content: [...chapter.content, { type: "chart", labels: ["C", "D"], values: [2, 3], data_source: "qo'shimcha sintetik ma'lumot" }] }
+    ? { content: [...chapter.content, { type: "chart", chartType: "bar", labels: ["C", "D"], values: [2, 3], data_source: "qo'shimcha sintetik ma'lumot" }] }
     : chapter);
   assert.throws(() => validatePlannedMedia(extraChart, planned), /chart 2\/1/);
   assert.throws(() => validatePlannedMedia(generated.map((chapter, index) => index === 1
