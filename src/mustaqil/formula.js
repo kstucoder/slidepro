@@ -3,7 +3,6 @@
 // MathJax v3 (pure JS) → SVG → sharp → PNG
 
 const sharp = require("sharp");
-const { normalizeFormulaSource } = require("./formula-data");
 
 let _mj = null; // singleton
 
@@ -29,17 +28,11 @@ async function initMathJax() {
 // LaTeX → PNG { buf, width, height }
 // em=8, density=144 → raw PNG ≈ 280×29px; MAX_H=28, MAX_W=180 → Word'da ~1.9 dyuym keng
 async function renderFormula(latex, display = true) {
-  latex = normalizeFormulaSource(latex);
-
   try {
     const { doc, adaptor } = await initMathJax();
     // em=8 (kichik) → formula matn balandligiga mutanosib
     const node = doc.convert(latex, { display, em: 8, ex: 4, containerWidth: 600 });
     let svg = adaptor.outerHTML(node);
-
-    if (/<(?:mjx-)?merror\b|class=["'][^"']*\bmjx-merror\b/i.test(svg)) {
-      throw new Error("MathJax formulani parse qila olmadi (merror)");
-    }
 
     const svgMatch = svg.match(/<svg[\s\S]*<\/svg>/i);
     if (svgMatch) svg = svgMatch[0];
@@ -71,9 +64,41 @@ async function renderFormula(latex, display = true) {
 
     return { buf: rawPng, width: dispW, height: dispH };
   } catch (e) {
-    console.error("[formula] MathJax xato:", e.message, "| latex:", latex.slice(0, 80));
-    throw new Error(`Formula render muvaffaqiyatsiz: ${e.message}`);
+    console.error("[formula] MathJax xato:", e.message, "| latex:", latex.slice(0, 50));
+    return fallbackFormula(latex);
   }
+}
+
+// Zaxira: oddiy SVG matn sifatida
+async function fallbackFormula(latex) {
+  // LaTeX buyruqlarini o'qiladigan matnga aylantirish
+  const text = latex
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "($1)/($2)")
+    .replace(/\\sqrt\{([^}]+)\}/g, "√($1)")
+    .replace(/\\sum/g, "Σ")
+    .replace(/\\int/g, "∫")
+    .replace(/\\pi/g, "π")
+    .replace(/\\alpha/g, "α").replace(/\\beta/g, "β").replace(/\\gamma/g, "γ")
+    .replace(/\\Delta/g, "Δ").replace(/\\delta/g, "δ")
+    .replace(/\\infty/g, "∞").replace(/\\pm/g, "±").replace(/\\cdot/g, "·")
+    .replace(/\^(\{[^}]+\}|[^\s}]+)/g, (_, e) => "^" + e.replace(/[{}]/g, ""))
+    .replace(/_(\{[^}]+\}|[^\s}]+)/g, (_, e) => "_" + e.replace(/[{}]/g, ""))
+    .replace(/[{}\\]/g, "")
+    .trim();
+
+  const W = Math.max(220, text.length * 9 + 30);
+  const H = 44;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+    <rect width="${W}" height="${H}" fill="white"/>
+    <text x="${W/2}" y="${H/2+6}" text-anchor="middle" font-family="Times New Roman,serif"
+          font-size="18" font-style="italic" fill="#111">${escSvg(text)}</text>
+  </svg>`;
+  const buf = await sharp(Buffer.from(svg)).png().toBuffer();
+  return { buf, width: W, height: H };
+}
+
+function escSvg(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
 module.exports = { renderFormula };

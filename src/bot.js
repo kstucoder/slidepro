@@ -5,7 +5,6 @@ const { Bot, session, InlineKeyboard, Keyboard, InputFile } = require("grammy");
 const { config, assertConfig } = require("./config");
 const db = require("./db");
 const { calcPrice, calcMustaqilPrice, currency, formatAmount } = require("./pricing");
-const { pagePlan, WORDS_PER_PAGE } = require("./mustaqil/prompt");
 const { extractText, cleanText } = require("./content/extract");
 const fulfill = require("./payments/fulfill");
 const click = require("./payments/click");
@@ -43,14 +42,11 @@ function slidesInline() {
     .text("✏️ Boshqa son","slides:custom");
 }
 function pagesInline() {
-  const presets = [10, 15, 20, 25, 30, 40].filter(n => n >= config.minPages && n <= config.maxPages);
-  const kb = new InlineKeyboard();
-  presets.forEach((n, i) => {
-    kb.text(String(n), `pages:${n}`);
-    if (i % 2 === 1) kb.row();
-  });
-  if (presets.length % 2 === 1) kb.row();
-  return kb.text("✏️ Boshqa son","pages:custom");
+  return new InlineKeyboard()
+    .text("10","pages:10").text("15","pages:15").row()
+    .text("20","pages:20").text("25","pages:25").row()
+    .text("30","pages:30").text("40","pages:40").row()
+    .text("✏️ Boshqa son","pages:custom");
 }
 function langInline() {
   return new InlineKeyboard()
@@ -256,7 +252,7 @@ bot.callbackQuery("adm:price", async (ctx) => {
   await ctx.reply(
     "Hozirgi:\n"+
     "• Taqdimot: "+db.getSetting("base_price")+"+"+db.getSetting("price_per_slide")+"/slayd\n"+
-    "• Mustaqil ish: "+db.getSetting("base_price","0")+"+"+db.getSetting("mustaqil_price_per_page",db.getSetting("price_per_slide","5000"))+"/sahifa\n\n"+
+    "• Mustaqil ish: "+db.getSetting("mustaqil_price_per_page",db.getSetting("price_per_slide","5000"))+"/sahifa\n\n"+
     "Yangi taqdimot narxini yuboring: <code>bazaviy per_slayd</code>\nMasalan: <code>0 5000</code>",
     { parse_mode:"HTML" }
   );
@@ -308,24 +304,11 @@ bot.callbackQuery(/^pages:(.+)$/, async (ctx) => {
     ctx.session.step = "await_custom_pages";
     return ctx.reply("Sahifalar sonini yozing ("+config.minPages+"–"+config.maxPages+"):");
   }
-  if (!/^\d+$/.test(val)) return ctx.reply("Sahifa soni noto'g'ri. Qaytadan tanlang.");
-  const requestedPages = Number(val);
-  if (requestedPages < config.minPages || requestedPages > config.maxPages) {
-    return ctx.reply(`Iltimos ${config.minPages}–${config.maxPages} oralig'idagi sahifa sonini tanlang.`);
-  }
-  const plan = pagePlan(requestedPages);
-  ctx.session.draft.requestedPages = plan.requestedPages;
-  ctx.session.draft.pages = plan.pages;
+  ctx.session.draft.pages = parseInt(val, 10);
   ctx.session.step = "await_lang";
-  await ctx.editMessageText(pageSelectionMessage(plan));
+  await ctx.editMessageText("✅ Sahifalar: "+val+" ta");
   await askLang(ctx);
 });
-function pageSelectionMessage(plan) {
-  const note = `Matn sig'imi ${WORDS_PER_PAGE} so'z/bet bo'yicha kalibrlangan. Formula, rasm, grafik yoki jadval sabab DOCX ${plan.mediaPageAllowancePages} betgacha uzayishi mumkin (taxminiy yuqori chegara: ${plan.maxExpectedPages} bet).`;
-  return plan.addedPages
-    ? `✅ Matnli sahifa rejasi: ${plan.pages} bet. ${plan.requestedPages} betlik so'rov 1,5 betlik ichki reja bandlari hisobida butun betga tushmagani uchun eng yaqin yuqori reja tanlandi (+${plan.addedPages} bet). Narx matn rejasi bo'yicha hisoblanadi.\n\n${note}`
-    : `✅ Matnli sahifa rejasi: ${plan.pages} bet (1,5 betlik ichki reja bandlari hisob modeli).\n\n${note}`;
-}
 
 // Slaydlar soni (taqdimot)
 bot.callbackQuery(/^slides:(.+)$/, async (ctx) => {
@@ -397,16 +380,12 @@ bot.on("message:text", async (ctx) => {
   }
 
   if (step === "await_custom_pages") {
-    if (!/^\d+$/.test(text))
-      return ctx.reply("Faqat butun son kiriting.");
-    const n = Number(text);
-    if (!Number.isSafeInteger(n)||n<config.minPages||n>config.maxPages)
+    const n = parseInt(text, 10);
+    if (!Number.isFinite(n)||n<config.minPages||n>config.maxPages)
       return ctx.reply("Iltimos "+config.minPages+"–"+config.maxPages+" oralig'ida son kiriting.");
-    const plan = pagePlan(n);
-    ctx.session.draft.requestedPages = plan.requestedPages;
-    ctx.session.draft.pages = plan.pages;
+    ctx.session.draft.pages = n;
     ctx.session.step = "await_lang";
-    await ctx.reply(pageSelectionMessage(plan));
+    await ctx.reply("✅ Sahifalar: "+n);
     return askLang(ctx);
   }
 
@@ -514,7 +493,7 @@ async function proceedToPayment(ctx) {
   if (isFree(ctx.from.id)) {
     const orderId = db.createOrder({
       user_tg_id: ctx.from.id, work_type: d.workType||"taqdimot",
-      topic: d.topic, slides: d.slides, pages: d.pages, requested_pages: d.requestedPages || d.pages,
+      topic: d.topic, slides: d.slides, pages: d.pages,
       student_name: d.studentName||"", student_group: d.studentGroup||"",
       language: d.language||"o'zbek",
       has_content: d.has_content, content_text: d.content_text,
@@ -523,7 +502,7 @@ async function proceedToPayment(ctx) {
     ctx.session.step = "idle";
     await ctx.reply(
       "🎁 Bepul rejim — to'lovsiz!\n\n📌 "+esc(d.topic)+"\n"+
-      (isMustaqil ? "📄 Reja bo'yicha "+d.pages+" sahifa" : "🎨 "+d.slides+" slayd")+
+      (isMustaqil ? "📄 "+d.pages+" sahifa" : "🎨 "+d.slides+" slayd")+
       "\n\nTayyorlanmoqda...",
       { parse_mode:"HTML" }
     );
@@ -538,7 +517,7 @@ async function proceedToPayment(ctx) {
   await ctx.reply(
     "🧾 <b>Buyurtma:</b>\n\n"+
     "📌 Mavzu: "+esc(d.topic)+"\n"+
-    (isMustaqil ? "📄 Sahifa rejasi: "+(d.pages||15)+" ta (Word .docx)\n" : "🎨 Slaydlar: "+(d.slides||10)+" ta (PowerPoint)\n")+
+    (isMustaqil ? "📄 Sahifalar: "+(d.pages||15)+" ta (Word .docx)\n" : "🎨 Slaydlar: "+(d.slides||10)+" ta (PowerPoint)\n")+
     "👤 "+esc(d.studentName||"—")+" — "+esc(d.studentGroup||"—")+"\n"+
     "📎 Kontent: "+(d.has_content ? "yuklangan" : "AI yaratadi")+"\n\n"+
     "💰 <b>Narx: "+formatAmount(amount)+" "+currency()+"</b>\n\nTo'lov usuli:",
@@ -552,7 +531,7 @@ bot.callbackQuery(/^pay:(manual|click|payme)$/, async (ctx) => {
   const method = ctx.match[1], d = ctx.session.draft;
   const orderId = db.createOrder({
     user_tg_id: ctx.from.id, work_type: d.workType||"taqdimot",
-    topic: d.topic, slides: d.slides, pages: d.pages, requested_pages: d.requestedPages || d.pages,
+    topic: d.topic, slides: d.slides, pages: d.pages,
     student_name: d.studentName||"", student_group: d.studentGroup||"",
     language: d.language||"o'zbek",
     has_content: d.has_content, content_text: d.content_text,

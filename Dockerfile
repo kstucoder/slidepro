@@ -5,7 +5,6 @@ FROM node:20-slim
 # fontconfig + DejaVu shriftlar: diagrammalardagi matn □□□ bo'lib qolmasligi uchun
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ \
-    graphviz \
     fontconfig fonts-dejavu-core fonts-dejavu-extra fonts-liberation \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*

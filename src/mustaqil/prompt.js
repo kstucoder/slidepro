@@ -1,317 +1,29 @@
-// src/mustaqil/prompt.js
+﻿// src/mustaqil/prompt.js
 // Mustaqil ish uchun 2 bosqichli LLM strategiyasi:
 //   1) outline вЂ” tuzilma + so'z maqsadlari + formula/grafik joylar
-//   2) chapter — har bir asosiy bo'lim uchun to'liq kontent (usedFormulas/usedCharts ban-list bilan)
+//   2) chapter вЂ” har bir bob uchun to'liq kontent (usedFormulas/usedCharts ban-list bilan)
 //
 // TAKRORLANISHNI OLDINI OLISH MEXANIZMI:
-//   Outline'da har bir asosiy bo'lim uchun formula_latex[] va chart_titles[] OLDINDAN belgilanadi.
-//   Har bir asosiy bo'lim promptiga boshqa asosiy bo'limlarning formula/chart ro'yxati BAN LIST sifatida uzatiladi.
+//   Outline'da har bob uchun formula_latex[] va chart_titles[] OLDINDAN belgilanadi.
+//   Har bir bob promtiga boshqa boblarning formula/chart ro'yxati BAN LIST sifatida uzatiladi.
 //   в†’ Parallel generatsiyada ham takrorlanish imkonsiz.
 
-// Calibrated against the DOCX layout (A4, Times New Roman 14pt, 1.5 spacing).
-const { normalizeHeadingTitle } = require("./headings");
-const { MIN_DIAGRAM_COUNT, resolveDiagramQuotas } = require("./media-requirements");
-const { buildFlowchartCaption } = require("./flowchart-data");
-// The final rendered DOCX measured 274.9 words/page (median 281) across seven full image-free pages.
-// Use 265 as a conservative target after excluding cover, outline, media pages, and spill pages.
-const WORDS_PER_PAGE = 265;
-// Leave vertical margin for the conclusion heading, three paragraphs, and DOCX spacing.
-const CONCLUSION_WORD_TARGET = 220;
-const FIXED_PAGE_COUNT = 5; // muqova, reja, kirish, xulosa, adabiyotlar — har biri 1 bet
-const SECTION_PAGES = 1.5;
-const MEDIA_PAGE_ALLOWANCE = 2; // formula/rasm/grafik/jadval sababli ruxsat etilgan qo'shimcha betlar
-const SECTION_WORD_TARGET = Math.round(WORDS_PER_PAGE * SECTION_PAGES);
-
-function pagePlan(pages) {
-  const numericPages = Number(pages);
-  const requestedPages = Number.isFinite(numericPages) ? Math.max(10, Math.floor(numericPages)) : 10;
-  const mainChapterCount = 3 + Math.floor((requestedPages - 10) / 5);
-  let subsectionCount = mainChapterCount;
-  let sectionCounts;
-  let mainPageBudget;
-  let plannedPages;
-  do {
-    sectionCounts = Array(mainChapterCount).fill(Math.floor(subsectionCount / mainChapterCount));
-    for (let i = 0; i < subsectionCount % mainChapterCount; i++) sectionCounts[i]++;
-    // Each main section starts on a fresh page; media overage is budgeted separately.
-    mainPageBudget = sectionCounts.reduce((sum, count) => sum + Math.ceil(SECTION_PAGES * count), 0);
-    plannedPages = FIXED_PAGE_COUNT + mainPageBudget;
-    if (plannedPages < requestedPages) subsectionCount++;
-  } while (plannedPages < requestedPages);
-
-  return {
-    requestedPages,
-    pages: plannedPages,
-    mediaPageAllowancePages: MEDIA_PAGE_ALLOWANCE,
-    maxExpectedPages: plannedPages + MEDIA_PAGE_ALLOWANCE,
-    addedPages: plannedPages - requestedPages,
-    mainChapterCount,
-    mainPageBudget,
-    subsectionCount,
-    sectionCounts,
-    introWordTarget: WORDS_PER_PAGE,
-    conclusionWordTarget: CONCLUSION_WORD_TARGET,
-    sectionWordTarget: SECTION_WORD_TARGET,
-    totalWords: WORDS_PER_PAGE + CONCLUSION_WORD_TARGET + subsectionCount * SECTION_WORD_TARGET,
-  };
-}
-
+const WORDS_PER_PAGE = 420;
+const SERVICE_PAGES  = 5; // muqova + reja + adabiyotlar + ~2 bo'shliq
 function wordsForPages(pages) {
-  return pagePlan(pages).totalWords;
-}
-
-const MAIN_ASPECTS = [
-  "nazariy asoslari va asosiy tushunchalari",
-  "tarkibiy qismlari va ishlash mexanizmlari",
-  "amaliy qo'llanilishi va tahlili",
-  "muammolari va ularni hal etish yo'llari",
-  "rivojlanish istiqbollari va samaradorligi",
-];
-const SECTION_ASPECTS = [
-  "nazariy asoslari va asosiy tushunchalar",
-  "tarkibiy qismlari va muhim omillar",
-  "amaliy qo'llanilishi",
-  "tahlil usullari va natijalari",
-  "muammolar va rivojlanish istiqbollari",
-];
-
-function cleanPlanTitle(title) {
-  return normalizeHeadingTitle(title, { stripNumbering: true });
-}
-
-function uniquePlanTitle(title, used, fallback) {
-  const base = cleanPlanTitle(title);
-  let candidate = base && !used.has(base.toLocaleLowerCase()) ? base : cleanPlanTitle(fallback);
-  let suffix = 2;
-  while (used.has(candidate.toLocaleLowerCase())) candidate = `${cleanPlanTitle(fallback)} — ${suffix++}`;
-  used.add(candidate.toLocaleLowerCase());
-  return candidate;
-}
-
-function fallbackMainTitle(topic, index) {
-  return `${String(topic || "Mavzu").trim()}: ${MAIN_ASPECTS[index % MAIN_ASPECTS.length]}`;
-}
-
-function defaultFlowchartPlan(topic, ordinal, language = "o'zbek") {
-  const subject = String(topic || "Mavzu").trim();
-  let plan;
-  if (ordinal === 0) {
-    plan = {
-      title: `${subject}: asosiy jarayon bosqichlari`,
-      purpose: `${subject} mavzusidagi jarayonning boshlanishi, muhim amallari, qaror nuqtalari va natijasini ko'rsatish`,
-    };
-  } else {
-    plan = {
-      title: `${subject}: tahlil va qarorlar ketma-ketligi`,
-      purpose: `${subject} bo'yicha ma'lumot yoki holatni baholash, tegishli qarorni tanlash va kutiladigan natijaga kelish bosqichlarini ko'rsatish`,
-    };
-  }
-  plan.caption = buildFlowchartCaption(plan, plan.purpose, language);
-  return plan;
-}
-
-function flowchartChapterPriority(chapter, ordinal, index) {
-  const sectionTitles = Array.isArray(chapter.sections) ? chapter.sections.map(section => section?.title || "") : [];
-  const text = [chapter.title || "", chapter.role || "", ...sectionTitles].join(" ").toLocaleLowerCase();
-  const patterns = ordinal === 0
-    ? [/tarkib|tuzil|struktur|arxitekt|model|asos|prinsip|blok/]
-    : [/ishlash|algorit|boshqar|rostla|amaliy|jarayon|qo'llan|qo‘llan|metod|loyih/];
-  return (patterns.some(pattern => pattern.test(text)) ? 10 : 0) - index / 100;
-}
-
-function normalizeOutlineForPages(outline, { pages, topic, language, studentName, studentGroup, org, supervisor, flowchartCount = 1, chartCount, formulaCount, formulaPlans = [], chartPlans = [] } = {}) {
-  const plan = pagePlan(pages);
-  const mediaQuota = Math.max(1, Math.ceil(plan.mainChapterCount / 2));
-  const diagramQuotas = resolveDiagramQuotas(plan.mainChapterCount, { flowchartCount, chartCount });
-  const formulaQuota = formulaCount == null
-    ? mediaQuota
-    : Math.min(plan.mainChapterCount, Math.max(0, Number.isFinite(Number(formulaCount)) ? Math.floor(Number(formulaCount)) : mediaQuota));
-  const chartQuota = diagramQuotas.chartCount;
-  const safeOutline = outline && typeof outline === "object" && !Array.isArray(outline) ? outline : {};
-  const sourceChapters = Array.isArray(safeOutline.chapters)
-    ? safeOutline.chapters.filter(chapter => chapter && typeof chapter === "object")
-    : [];
-  const isIntro = (chapter) => chapter.id === "intro" || chapter.role === "introduction" || /^kirish$/i.test(String(chapter.title || "").trim());
-  const isConclusion = (chapter) => chapter.id === "conclusion" || chapter.role === "conclusion" || /^xulosa$/i.test(String(chapter.title || "").trim());
-  const isReferences = (chapter) => /reference|bibliography/i.test(`${chapter.id || ""} ${chapter.role || ""}`) || /^(foydalanilgan adabiyotlar(?: ro'yxati)?|adabiyotlar(?: ro'yxati)?|references|bibliography)$/i.test(String(chapter.title || "").trim());
-  const introSource = sourceChapters.find(isIntro) || {};
-  const conclusionSource = sourceChapters.find(isConclusion) || {};
-  const mainSources = sourceChapters.filter((chapter) => !isIntro(chapter) && !isConclusion(chapter) && !isReferences(chapter));
-  const mainChapters = mainSources.slice(0, plan.mainChapterCount);
-  while (mainChapters.length < plan.mainChapterCount) {
-    const index = mainChapters.length;
-    mainChapters.push({ title: fallbackMainTitle(topic, index), role: ["theory", "analysis", "application", "comparison", "methodology"][index % 5] });
-  }
-  const desiredFlowchartCount = diagramQuotas.flowchartCount;
-  const flowchartAssignments = new Map();
-  mainChapters.forEach((chapter, index) => {
-    if (flowchartAssignments.size >= desiredFlowchartCount) return;
-    const sourcePlans = Array.isArray(chapter.flowchart_plans) ? chapter.flowchart_plans : [];
-    const requested = Math.max(Number(chapter.flowchart_count) || 0, sourcePlans.length);
-    if (requested <= 0) return;
-    const sourcePlan = sourcePlans.find(flowchart => flowchart && typeof flowchart === "object" && flowchart.title);
-    const selectedPlan = sourcePlan || defaultFlowchartPlan(topic || chapter.title, flowchartAssignments.size, language);
-    flowchartAssignments.set(index, {
-      ...selectedPlan,
-      caption: selectedPlan.caption || buildFlowchartCaption(selectedPlan, selectedPlan.purpose, language),
-    });
-  });
-  while (flowchartAssignments.size < desiredFlowchartCount) {
-    const ordinal = flowchartAssignments.size;
-    const candidates = mainChapters
-      .map((chapter, index) => ({ chapter, index, score: flowchartChapterPriority(chapter, ordinal, index) }))
-      .filter(candidate => !flowchartAssignments.has(candidate.index))
-      .sort((left, right) => right.score - left.score);
-    if (!candidates.length) break;
-    const { chapter, index } = candidates[0];
-    flowchartAssignments.set(index, defaultFlowchartPlan(topic || chapter.title, ordinal, language));
-  }
-  const fixedFormulaPlans = (Array.isArray(formulaPlans) ? formulaPlans : [])
-    .filter(formula => (typeof formula === "string" ? formula : formula?.latex)?.trim())
-    .slice(0, formulaQuota);
-  const fixedChartPlans = (Array.isArray(chartPlans) ? chartPlans : [])
-    .filter(chart => chart && typeof chart === "object" && chart.title)
-    .slice(0, chartQuota);
-  let formulaPlanCursor = 0;
-  const chartAssignments = new Map();
-  const chartCandidates = mainChapters
-    .map((chapter, index) => ({ chapter, index }))
-    .sort((left, right) => Number(flowchartAssignments.has(left.index)) - Number(flowchartAssignments.has(right.index)) || left.index - right.index);
-  const explicitClassicTypes = chartCount != null && chartQuota === 2 ? ["bar", "line"] : null;
-  for (const candidate of chartCandidates) {
-    if (chartAssignments.size >= chartQuota) break;
-    const sourceChart = Array.isArray(candidate.chapter.chart_plans)
-      ? candidate.chapter.chart_plans.find(chart => chart && typeof chart === "object" && chart.title)
-      : null;
-    const ordinal = chartAssignments.size;
-    const fallbackTypes = ["line", "bar", "pie"];
-    const chartType = explicitClassicTypes
-      ? explicitClassicTypes[ordinal]
-      : (["bar", "line", "pie"].includes(candidate.chapter.chart_type) ? candidate.chapter.chart_type : fallbackTypes[ordinal % fallbackTypes.length]);
-    chartAssignments.set(candidate.index, {
-      plan: fixedChartPlans[ordinal] || sourceChart || {
-        title: `${candidate.chapter.title || fallbackMainTitle(topic, candidate.index)}: asosiy ko'rsatkichlar`,
-        variable: `${topic || candidate.chapter.title || "Mavzu"} bo'yicha tahliliy ko'rsatkichlar`,
-      },
-      chartType,
-    });
-  }
-  const usedMainTitles = new Set();
-  let formulaSlots = formulaQuota;
-  let tableSlotAvailable = true;
-
-  const intro = {
-    ...introSource,
-    id: "intro", title: "Kirish", role: "introduction", level: 1,
-    word_target: plan.introWordTarget,
-    formula_count: 0, formula_plans: [], formula_latex: [],
-    chart_count: 0, chart_type: null, chart_plans: [], flowchart_count: 0, flowchart_plans: [], table_count: 0, sections: [],
-  };
-  const normalizedMain = mainChapters.map((chapter, index) => {
-    const desiredCount = plan.sectionCounts[index];
-    const existingSections = Array.isArray(chapter.sections) ? chapter.sections : [];
-    const usedTitles = new Set();
-    const mainTitle = uniquePlanTitle(chapter.title, usedMainTitles, fallbackMainTitle(topic, index));
-    const sourceFormulaPlans = Array.isArray(chapter.formula_plans)
-      ? chapter.formula_plans
-      : Array.isArray(chapter.formula_latex) ? chapter.formula_latex : [];
-    const fixedFormula = fixedFormulaPlans[formulaPlanCursor];
-    const selectedFormulaSource = fixedFormula
-      ? [fixedFormula]
-      : sourceFormulaPlans.filter(formula => (typeof formula === "string" ? formula : formula?.latex)?.trim()).slice(0, 1);
-    const formulaPlans = formulaSlots > 0 ? selectedFormulaSource : [];
-    formulaSlots -= formulaPlans.length;
-    if (fixedFormula && formulaPlans.length) formulaPlanCursor++;
-    const assignedChart = chartAssignments.get(index);
-    const chartCount = assignedChart ? 1 : 0;
-    const assignedFlowchart = flowchartAssignments.get(index);
-    const flowchartCount = assignedFlowchart ? 1 : 0;
-    const flowchartPlans = assignedFlowchart ? [assignedFlowchart] : [];
-    const tableCount = tableSlotAvailable && Number(chapter.table_count) > 0 ? 1 : 0;
-    if (tableCount) tableSlotAvailable = false;
-    const sections = Array.from({ length: desiredCount }, (_, sectionIndex) => {
-      const fallback = `${mainTitle}: ${SECTION_ASPECTS[sectionIndex % SECTION_ASPECTS.length]} (${sectionIndex + 1})`;
-      const title = uniquePlanTitle(existingSections[sectionIndex]?.title, usedTitles, fallback);
-      return {
-        ...(existingSections[sectionIndex] || {}),
-        id: `ch${index + 1}_${sectionIndex + 1}`,
-        title,
-        level: 2,
-        word_target: plan.sectionWordTarget,
-      };
-    });
-    return {
-      ...chapter,
-      id: `ch${index + 1}`,
-      title: mainTitle,
-      role: chapter.role || ["theory", "analysis", "application", "comparison", "methodology"][index % 5],
-      level: 1,
-      sections,
-      formula_count: formulaPlans.length,
-      formula_plans: formulaPlans,
-      formula_latex: formulaPlans.map(formula => typeof formula === "string" ? formula : formula.latex),
-      chart_count: chartCount,
-      chart_type: chartCount ? assignedChart.chartType : null,
-      chart_plans: chartCount ? [assignedChart.plan] : [],
-      flowchart_count: flowchartCount,
-      flowchart_plans: flowchartPlans,
-      table_count: tableCount,
-      word_target: desiredCount * plan.sectionWordTarget,
-    };
-  });
-  const conclusion = {
-    ...conclusionSource,
-    id: "conclusion", title: "Xulosa", role: "conclusion", level: 1,
-    word_target: plan.conclusionWordTarget,
-    formula_count: 0, formula_plans: [], formula_latex: [],
-    chart_count: 0, chart_type: null, chart_plans: [], flowchart_count: 0, flowchart_plans: [], table_count: 0, sections: [],
-  };
-
-  return {
-    ...safeOutline,
-    meta: {
-      ...(safeOutline.meta && typeof safeOutline.meta === "object" ? safeOutline.meta : {}),
-      title: safeOutline.meta?.title || topic || "Mustaqil ish",
-      type: safeOutline.meta?.type || "MUSTAQIL ISH",
-      org: org || "O'quv muassasasi",
-      department: safeOutline.meta?.department || "Tegishli bo'lim",
-      student_name: studentName || "F.I.Sh.",
-      student_group: studentGroup || "—",
-      supervisor: supervisor || "O'qituvchi",
-      city: safeOutline.meta?.city || "Shahar",
-      year: String(new Date().getFullYear()),
-      language: safeOutline.meta?.language || language || "o'zbek",
-    },
-    total_words_target: plan.totalWords,
-    chapters: [intro, ...normalizedMain, conclusion],
-    references: Array.isArray(safeOutline.references)
-      ? safeOutline.references.filter(reference => typeof reference === "string" && reference.trim()).map(reference => reference.trim()).slice(0, 8)
-      : [],
-  };
+  return Math.round(Math.max(pages - SERVICE_PAGES, 3) * WORDS_PER_PAGE);
 }
 
 // ===================== 1-BOSQICH: OUTLINE =====================
 function outlineSystemPrompt() {
-  return `Sen akademik mustaqil ish tuzilmasini yaratuvchi mutaxassissan. FAQAT to'g'ri JSON qaytarasan — hech qanday izoh, markdown, backtick yo'q.`;
+  return `Sen akademik mustaqil ish tuzilmasini yaratuvchi mutaxassissan. FAQAT to'g'ri JSON qaytarasan вЂ” hech qanday izoh, markdown, backtick yo'q.`;
 }
 
-function outlineUserPrompt({ topic, pages, language, studentName, studentGroup, org, supervisor, sourceContent, flowchartCount = 1, chartCount = null, formulaCount = null }) {
-  const plan = pagePlan(pages);
-  const diagramQuotas = resolveDiagramQuotas(plan.mainChapterCount, { flowchartCount, chartCount });
-  const requestedFlowcharts = diagramQuotas.flowchartCount;
-  const totalWords = plan.totalWords;
-  const sectionDistribution = plan.sectionCounts.map((count, index) => `asosiy bo'lim ${index + 1}: ${count}`).join(", ");
-  const mediaPerTypeLimit = Math.max(1, Math.ceil(plan.mainChapterCount / 2));
-  const requestedFormulas = formulaCount == null
-    ? mediaPerTypeLimit
-    : Math.min(plan.mainChapterCount, Math.max(0, Number.isFinite(Number(formulaCount)) ? Math.floor(Number(formulaCount)) : mediaPerTypeLimit));
-  const requestedCharts = diagramQuotas.chartCount;
-  const mediaSectionLimit = Math.min(plan.mainChapterCount, Math.max(mediaPerTypeLimit, requestedFormulas, requestedCharts, requestedFlowcharts));
-  const formulaQuotaText = formulaCount == null ? `ko'pi bilan ${requestedFormulas}` : `aynan ${requestedFormulas}`;
-  const chartQuotaText = chartCount == null ? `kamida ${requestedCharts}` : `aynan ${requestedCharts}`;
+function outlineUserPrompt({ topic, pages, language, studentName, studentGroup, org, supervisor, sourceContent }) {
+  const totalWords = wordsForPages(pages);
   const lang = language || "o'zbek";
   const contentNote = sourceContent
-    ? `\n\nFoydalanuvchi quyidagi manba kontentini berdi — asosiy g'oyalar va faktlar SHUNGA asoslansin. Agar unda TEKSHIRILGAN MANBALAR ro'yxati bo'lsa, adabiyotlar bo'limida faqat shu manbalarni aynan ko'chir; muallif, yil, nashr yoki sarlavhani o'zgartirma va yangi manba qo'shma:\n---\n${sourceContent.slice(0,3000)}\n---`
+    ? `\n\nFoydalanuvchi quyidagi manba kontentini berdi вЂ” asosiy g'oyalar va faktlar SHUNGA asoslansin:\n---\n${sourceContent.slice(0,3000)}\n---`
     : "";
 
   return `Akademik mustaqil ish uchun tuzilma (outline) yarat.
@@ -319,8 +31,8 @@ function outlineUserPrompt({ topic, pages, language, studentName, studentGroup, 
 Talablar:
 - Mavzu: "${topic}"
 - Til: ${lang}
-- Sahifalar: ${plan.requestedPages} bet so'ralgan; A4/14pt/1.5 spacing va amalda o'lchangan ${WORDS_PER_PAGE} so'z/bet xavfsiz me'yorida matn rejasi ${plan.pages} bet${plan.addedPages ? ` (+${plan.addedPages} bet)` : ""} (jami ≈ ${totalWords} so'z). Formula, rasm, grafik yoki jadval sabab yakuniy Word ${plan.mediaPageAllowancePages} betgacha qo'shimcha, ko'pi bilan ${plan.maxExpectedPages} bet bo'lishi mumkin.
-- Talaba: ${studentName || "F.I.Sh."}, guruh: ${studentGroup || "—"}
+- Sahifalar soni: ${pages} (jami в‰€ ${totalWords} so'z asosiy kontent)
+- Talaba: ${studentName || "F.I.Sh."}, guruh: ${studentGroup || "вЂ”"}
 - Muassasa: ${org || "O'quv muassasasi"}
 - Rahbar: ${supervisor || "O'qituvchi"}${contentNote}
 
@@ -332,7 +44,7 @@ JSON strukturasida qaytargin:
     "org": "${org || "O'quv muassasasi"}",
     "department": "tegishli kafedra yoki bo'lim",
     "student_name": "${studentName || "F.I.Sh."}",
-    "student_group": "${studentGroup || "—"}",
+    "student_group": "${studentGroup || "вЂ”"}",
     "supervisor": "${supervisor || "O'qituvchi"}",
     "city": "shahar",
     "year": "${new Date().getFullYear()}",
@@ -345,39 +57,33 @@ JSON strukturasida qaytargin:
       "title": "Kirish",
       "role": "introduction",
       "level": 1,
-      "word_target": ${plan.introWordTarget},
+      "word_target": <150-250>,
       "formula_count": 0,
       "formula_plans": [],
       "chart_count": 0,
       "chart_type": null,
       "chart_plans": [],
-      "flowchart_count": 0,
-      "flowchart_plans": [],
       "table_count": 0,
       "sections": []
     },
     {
       "id": "ch1",
-      "title": "<asosiy mazmunni ifodalovchi qisqa sarlavha, raqam/prefikssiz>",
+      "title": "<asosiy bo'lim nomi вЂ” BOB so'zi ISHLATMA>",
       "role": "<theory|analysis|application|comparison|methodology>",
       "level": 1,
       "word_target": <raqam>,
-      "formula_count": <0 yoki 1>,
+      "formula_count": <0 yoki 1-3>,
       "formula_plans": [
-        {"latex": "<to\'g\'ri LaTeX>", "concept": "<bu formula nimani ifodalaydi вЂ” boshqa asosiy bo'limda xuddi shu konsept ISHLATILMASIN>"}
+        {"latex": "<to\'g\'ri LaTeX>", "concept": "<bu formula nimani ifodalaydi вЂ” boshqa bobda xuddi shu konsept ISHLATILMASIN>"}
       ],
-      "chart_count": <0 yoki 1>,
+      "chart_count": 1,
       "chart_type": "<bar|line|pie>",
       "chart_plans": [
-        {"title": "<grafik sarlavhasi>", "variable": "<qaysi o'zgaruvchi/ma'lumot ko'rsatiladi вЂ” boshqa asosiy bo'limda xuddi shu ma'lumot ISHLATILMASIN>"}
-      ],
-      "flowchart_count": <0 yoki 1>,
-      "flowchart_plans": [
-        {"title": "<oqim sxemasi sarlavhasi>", "purpose": "<bosqichlar yoki qarorlar oqimi nimani tushuntiradi>", "caption": "<inglizcha atamalarning o'zbekcha muqobili va qisqa izoh>"}
+        {"title": "<grafik sarlavhasi>", "variable": "<qaysi o\'zgaruvchi/ma\'lumot ko\'rsatiladi вЂ” boshqa bobda xuddi shu ma\'lumot ISHLATILMASIN>"}
       ],
       "table_count": <0 yoki 1>,
       "sections": [
-        {"id":"ch1_1","title":"<kichik bo'lim>","level":2,"word_target":${plan.sectionWordTarget}}
+        {"id":"ch1_1","title":"<kichik bo'lim>","level":2,"word_target":<raqam>}
       ]
     },
     {
@@ -385,14 +91,12 @@ JSON strukturasida qaytargin:
       "title": "Xulosa",
       "role": "conclusion",
       "level": 1,
-      "word_target": ${plan.conclusionWordTarget},
+      "word_target": <200-350>,
       "formula_count": 0,
       "formula_plans": [],
       "chart_count": 0,
       "chart_type": null,
       "chart_plans": [],
-      "flowchart_count": 0,
-      "flowchart_plans": [],
       "table_count": 0,
       "sections": []
     }
@@ -405,24 +109,14 @@ JSON strukturasida qaytargin:
 
 TUZILMA QOIDALARI:
 - DAIM: 1 ta Kirish (id="intro") в†’ asosiy bo'limlar в†’ 1 ta Xulosa (id="conclusion")
-- Asosiy bo'limlar soni ANIQLIK BILAN ${plan.mainChapterCount} ta bo'lsin.
-- JSON ichidagi sections — asosiy matnning ichki reja bandlari; ular asosiy matnda ishlatiladi, ammo REJA sahifasida hech qachon chiqarilmaydi.
-- Ichki reja bandlari jami ANIQLIK BILAN ${plan.subsectionCount} ta; asosiy bo'limlar bo'yicha taqsimot: ${sectionDistribution}.
-- Har bir ichki reja bandi ${SECTION_PAGES} sahifa / ${plan.sectionWordTarget} so'zga mo'ljallansin; bo'lim word_target qiymati ichki reja bandlari yig'indisiga teng.
-- Kirish ${plan.introWordTarget}, Xulosa ${plan.conclusionWordTarget} so'zdan oshmasin; ikkalasida ham ichki sarlavha bo'lmasin.
-- Matnli sahifa hisobi fixed 5 sahifa va har bir ichki reja bandiga 1,5 sahifa asosida tuziladi; media sababli 2 betlik ortiqcha joy alohida ruxsat etilgan.
-- Butun ish bo'yicha ${formulaQuotaText} formula, ${chartQuotaText} miqdoriy grafik, aynan ${requestedFlowcharts} ta Graphviz oqim sxemasi va ko'pi bilan 1 jadval rejalashtir; har bir asosiy bo'limga ko'pi bilan bittadan formula, grafik va oqim sxemasi ber.
-- Miqdoriy grafiklar va Graphviz oqim sxemalarining jami kamida ${MIN_DIAGRAM_COUNT} ta bo'lsin; bu uchta bilan cheklanadigan yuqori limit emas — mavzu va sahifa rejasi imkon bersa, undan ko'proq diagramma rejalashtir va chiqar.
-- Media bandlarini ko'pi bilan ${mediaSectionLimit} ta asosiy bo'limda jamla; formula va grafiklarni bir-biriga yaqin joylashtir, Kirish va Xulosada media ishlatma.
-- Jami aynan ${requestedFlowcharts} ta Graphviz sxemasi rejalashtir; ularni mazmunan eng mos asosiy bo'limlarga bittadan joylashtir. Har bir sxema boshqa jarayon yoki ko'rinishni tushuntirsin; Kirish va Xulosada sxema bo'lmasin.
+- Asosiy bo'limlar soni: ${pages <= 15 ? "1-2" : pages <= 25 ? "2-3" : "3-4"} ta
 - Har asosiy bo'lim BOSHQA JIHATNI yoritsin: nazariy / amaliy / taqqoslov / prognoz
-- Sarlavhalarga strukturaviy yorliq yoki raqam prefiksi yozma — dastur raqamlarni o'zi qo'shadi.
-- Asosiy va ichki sarlavhalar lo'nda, faqat mazmunni ifodalovchi bo'lsin (odatda 3–10 so'z); kirish so'zlari, takroriy mavzu nomi va izohlarni sarlavhaga qo'shma.
-- word_target yig'indisi aynan ${totalWords} bo'lsin. Faqat belgilangan ichki bo'limlarni yarat; ortiqcha sarlavha qo'shma.
+- "bob" so'zi sarlavhada BO'LMASIN
+- word_target yig'indisi в‰€ ${totalWords}
 
 FORMULALAR (mavzuning tabiatiga qarab):
 - ANIQ FANLAR (matematika, fizika, kimyo, muhandislik, iqtisodiyot, CS, biologiya):
-  * Butun ish bo'yicha ${formulaQuotaText} ta formula; bir asosiy bo'limda ko'pi bilan 1 ta. ${requestedFormulas === plan.mainChapterCount ? "Har bir asosiy bo'limga aynan bittadan rejalashtir." : "Rejalashtirilgan formulalar soni umumiy kvotaga aynan teng bo'lsin."}
+  * Har asosiy bob uchun 1-3 ta TURLI formula
   * formula_plans[] da har formula uchun "latex" VA "concept" ko'rsatilsin
   * concept: shu formulaning qanday fizikaviy/matematik hodisani ifodalashini aniq yoz
 
@@ -444,13 +138,12 @@ FORMULALAR (mavzuning tabiatiga qarab):
             ch2: concept="Laplace tenglamasidan diskret raqamli rostlash algoritmiga o'tish"
 - GUMANITAR/IJTIMOIY/EKOLOGIK-UMUMIY: formula_count:0, formula_plans:[]
 
-GRAFIKLAR (butun ish bo'yicha ${chartQuotaText} ta; har asosiy bo'limda 0 yoki 1 ta):
-- Aynan 2 ta grafik so'ralganda, klassik statistik ko'rinishlar sifatida bitta "bar" va bitta "line" tanla; har birining ma'lumoti boshqa bo'lsin.
+GRAFIKLAR (har asosiy bob uchun 1 ta, tur TAKRORLANMAYDI):
 - "line"  в†’ vaqt dinamikasi, o'zgarish tendensiyasi (X=yillar/oylar)
 - "bar"   в†’ kategoriyalar taqqoslash, miqdoriy farqlar
 - "pie"   в†’ ulush, foiz taqsimot (max 5 bo'lak)
-- Har bir chart_count va chart_plans soni o'zaro mos bo'lsin; diagrammalarni mavzu va sahifa rejasi imkon berganicha ko'proq rejalashtirish mumkin.
-- Grafik turlarini mavjud chartlar orasida xilma-xil tanla; ma'lumot/variable takrorlanmasin.
+- 2 bob: "line"+"bar" YOKI "line"+"pie" YOKI "bar"+"pie"
+- 3 bob: "line","bar","pie" вЂ” har biri boshqasi
 - chart_plans[] da har grafik uchun "title" VA "variable" ko\'rsatilsin
   * variable: bu grafikda qaysi ma\'lumot/o\'zgaruvchi tahlil qilinadi
   * VARIABLE DARAJASIDA TAKRORLANMAYDI вЂ” sarlavha farq qilsa ham, bir xil ma\'lumot BO\'LMASIN
@@ -458,14 +151,12 @@ GRAFIKLAR (butun ish bo'yicha ${chartQuotaText} ta; har asosiy bo'limda 0 yoki 1
             ch2: variable="mintaqalar bo\'yicha yog\'ingarchilik miqdori (mm, 2023)"
   * Bu ikki variable hech qachon bir biriga o\'xshamaydi
 
-JADVALLAR: butun ish bo'yicha ko'pi bilan 1 ta, ixtiyoriy asosiy bo'lim uchun
+JADVALLAR: kamida 1 ta ixtiyoriy bob uchun
 
-ADABIYOTLAR (references): 8 ta, APA 7 formatida, qisqa va bir sahifaga sig'adigan qilib. FAQAT HAQIQIY, MAVJUD ASARLAR:
+ADABIYOTLAR (references): 8-12 ta, APA 7 formatida. FAQAT HAQIQIY, MAVJUD ASARLAR:
 - Kitob: Muallif, A. A. (yil). Asar nomi. Nashriyot.
 - Jurnal: Muallif, A. A. (yil). Maqola nomi. Jurnal nomi, jild(son), sahifalar.
-- O'zbekcha/xorijiy manbalar nisbatini faqat haqiqiy, bibliografik ma'lumoti aniq asarlar topilsa saqla; ulushni to'ldirish uchun hech qachon muallif, asar, yil yoki nashriyot uydirma.
-- Noaniq umumiy yozuvlar (masalan, "oliy ta'lim uchun darslik, 2021–2024") manba hisoblanmaydi; har bir yozuvda aniqlanadigan muallif, yil, nom va nashriyot bo'lsin.
-- Agar TEKSHIRILGAN MANBALAR ro'yxati berilgan bo'lsa, aynan o'sha manbalarni ishlat; tekshirilgan ro'yxatni boshqa asarlar bilan almashtirma.
+- 40% o'zbek tilidagi, 60% xorijiy вЂ” 40% so'nggi 5 yilda (2020-2025)
 - Mavjudligiga 100% ishonch hosil qilingan manbalar
 
 Faqat JSON qaytar`;
@@ -493,69 +184,44 @@ function repairTruncatedJson(s) {
 }
 function parseOutline(text) {
   const clean = text.replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
-  try {
-    const value = JSON.parse(clean);
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("JSON root object bo'lishi kerak");
-    return value;
-  }
+  try { return JSON.parse(clean); }
   catch(e) {
     const s=clean.indexOf("{"), end=clean.lastIndexOf("}");
-    if(s>=0&&end>s) {
-      try {
-        const value = JSON.parse(clean.slice(s,end+1));
-        if (value && typeof value === "object" && !Array.isArray(value)) return value;
-      } catch(_) {}
-    }
+    if(s>=0&&end>s) { try { return JSON.parse(clean.slice(s,end+1)); } catch(_) {} }
     // S2-T4: kesilgan JSON tiklovchi (token limit)
-    if (s>=0) {
-      try {
-        const value = JSON.parse(repairTruncatedJson(clean.slice(s)));
-        if (value && typeof value === "object" && !Array.isArray(value)) return value;
-      } catch(_) {}
-    }
+    if (s>=0) { try { return JSON.parse(repairTruncatedJson(clean.slice(s))); } catch(_) {} }
     throw new Error("Outline JSON o'qilmadi: "+clean.slice(0,200));
   }
 }
 
 // ===================== 2-BOSQICH: CHAPTER CONTENT =====================
 function chapterSystemPrompt() {
-  return `Sen akademik mustaqil ish yozuvchisi mutaxassissan. FAQAT to'g'ri JSON qaytarasan вЂ” hech qanday izoh, markdown, backtick yo'q. Akademik, rasmiy, chuqur tahliliy uslubda yoz. Tuzilma nomlari uchun faqat "asosiy bo'lim" yoki "reja bandi" iboralarini tanla. So'zlashuv/sleng, ma'nosiz yoki noilmiy iboralar va birinchi shaxsdagi ("men") bayondan qoch; aniq texnik atamani ishlat. Manbasiz real statistika yoki aniq o'lchov natijasini uydirma.`;
+  return `Sen akademik mustaqil ish yozuvchisi mutaxassissan. FAQAT to'g'ri JSON qaytarasan вЂ” hech qanday izoh, markdown, backtick yo'q. Akademik, rasmiy, chuqur tahliliy uslubda yoz.`;
 }
 
 function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterIndex, totalChapters, usedFormulas = [], usedCharts = [] }) {
   const lang = language || "o'zbek";
   const wt = chapter.word_target || 400;
-  const role = chapter.role || (chapter.id === "intro" ? "introduction" : chapter.id === "conclusion" ? "conclusion" : "theory");
-  const isIntro = role === "introduction";
-  const isConclusion = role === "conclusion";
-  const isMain = !isIntro && !isConclusion;
-  const sections = Array.isArray(chapter.sections) ? chapter.sections : [];
-  const sectionTarget = sections[0]?.word_target || SECTION_WORD_TARGET;
-  const paraCount = isMain ? Math.max(3, sections.length * 3) : 3;
-  const wordsPerParagraph = isMain ? Math.ceil(sectionTarget / 3) : Math.ceil(wt / 3);
-  const minWordsPerParagraph = Math.max(1, wordsPerParagraph - 5);
-  const maxWordsPerParagraph = wordsPerParagraph;
+  const paraCount = Math.max(4, Math.ceil(wt / 110));
   const contentNote = sourceContent
     ? `\nManba kontent (asosiy g'oyalar shunga asoslansin):\n---\n${sourceContent.slice(0,2000)}\n---`
     : "";
   const allTitles = outline.chapters.map((c,i) => `${i+1}. ${c.title}`).join("\n");
 
-  const mainNumber = isMain
-    ? outline.chapters.slice(0, chapterIndex + 1).filter(c => c.id !== "intro" && c.id !== "conclusion").length
-    : 0;
-  const sectionGuide = isMain
-    ? `\n\nICHKI REJA BANDLARI — aynan quyidagilarni ishlat, boshqa sarlavha qo'shma:\n${sections.map((s, i) => `${mainNumber}.${i + 1}. ${s.title} — qat'iy ${s.word_target || SECTION_WORD_TARGET} so'zdan oshmasin; aynan 3 ta paragraf, har biri ${Math.ceil((s.word_target || SECTION_WORD_TARGET) / 3) - 5}-${Math.ceil((s.word_target || SECTION_WORD_TARGET) / 3)} so'z`).join("\n")}\nMedia (formula/rasm/grafik/jadval) matn so'z limitini oshirishga asos bo'lmaydi.`
-    : "";
+  const role = chapter.role || (chapter.id === "intro" ? "introduction" : chapter.id === "conclusion" ? "conclusion" : "theory");
+  const isIntro      = role === "introduction";
+  const isConclusion = role === "conclusion";
+  const isMain       = !isIntro && !isConclusion;
 
-  // BAN LIST: boshqa asosiy bo'limlarda allaqachon rejalashtirilgan + generatsiya qilingan
+  // BAN LIST: boshqa boblarda allaqachon rejalashtirilgan + generatsiya qilingan
   // Ban-list: string + konsept/variable darajasida tekshiruv
   // Bu boshqa notation bilan bir xil konseptni oldini oladi
   const formulaBan = usedFormulas.length > 0
-    ? `\n\nрџљ« TAKRORLANISHI MUMKIN BO'LMAGAN FORMULALAR (boshqa asosiy bo'limlarda allaqachon qoplangan):\n${usedFormulas.map((f,i)=>`  ${i+1}. ${f}`).join("\n")}\n\nвљ пёЏ MUHIM: Yuqoridagi formulalarni VA shu KONSEPTLARGA YAQIN formulalarni ISHLATMA.\nNotatsiya o'zgartirib ham bo'lmaydi вЂ” matematik ma'no bir xil bo'lsa TAQIQLANADi.`
+    ? `\n\nрџљ« TAKRORLANISHI MUMKIN BO'LMAGAN FORMULALAR (boshqa boblarda allaqachon qoplangan):\n${usedFormulas.map((f,i)=>`  ${i+1}. ${f}`).join("\n")}\n\nвљ пёЏ MUHIM: Yuqoridagi formulalarni VA shu KONSEPTLARGA YAQIN formulalarni ISHLATMA.\nNotatsiya o'zgartirib ham bo'lmaydi вЂ” matematik ma'no bir xil bo'lsa TAQIQLANADi.`
     : "";
 
   const chartBan = usedCharts.length > 0
-    ? `\n\nрџљ« TAKRORLANISHI MUMKIN BO'LMAGAN GRAFIK MA'LUMOTLAR (boshqa asosiy bo'limlarda allaqachon ko'rsatilgan):\n${usedCharts.map((c,i)=>`  ${i+1}. ${c}`).join("\n")}\n\nвљ пёЏ MUHIM: Yuqoridagi VARIABLE/MA'LUMOT TURINI ham ishlatma вЂ” sarlavha o'zgartirib ham bo'lmaydi.\nBIR XIL MA'LUMOTNI boshqa sarlavha bilan ko'rsatish ham TAKROR hisoblanadi.`
+    ? `\n\nрџљ« TAKRORLANISHI MUMKIN BO'LMAGAN GRAFIK MA'LUMOTLAR (boshqa boblarda allaqachon ko'rsatilgan):\n${usedCharts.map((c,i)=>`  ${i+1}. ${c}`).join("\n")}\n\nвљ пёЏ MUHIM: Yuqoridagi VARIABLE/MA'LUMOT TURINI ham ishlatma вЂ” sarlavha o'zgartirib ham bo'lmaydi.\nBIR XIL MA'LUMOTNI boshqa sarlavha bilan ko'rsatish ham TAKROR hisoblanadi.`
     : "";
 
   // Chart type from outline
@@ -563,15 +229,10 @@ function chapterUserPrompt({ chapter, outline, language, sourceContent, chapterI
     ? `\nGrafik turi: "${chapter.chart_type}" (outline'da belgilangan, o'zgartirma)\n- "line": X=vaqt/davr, Y=o'zgaruvchan miqdor вЂ” tendensiya\n- "bar": kategoriyalar taqqoslash вЂ” miqdoriy farqlar\n- "pie": ulush/foiz taqsimot, max 5 bo'lak, jami=100%`
     : "";
 
-  const flowchartPlan = Array.isArray(chapter.flowchart_plans) ? chapter.flowchart_plans[0] : null;
-  const flowchartGuide = chapter.flowchart_count > 0
-    ? `\nGraphviz oqim sxemasi rejasi: "${flowchartPlan?.title || chapter.title}" — ${flowchartPlan?.purpose || "mavzudagi jarayon yoki qarorlar ketma-ketligi"}. Reja captioni: ${flowchartPlan?.caption || ""}.\nFaqat mazmuniy, mavzuga mos 4–12 tugunli oqim sxemasi ber; taxminiy statistik raqam kiritma. Graphviz title, node va edge label matnini model qaytargandek aynan saqla; inglizcha atamalar ${lang} so'ralgan taqdirda ham chizmada qolishi mumkin. Tugun kind qiymatlari faqat start, end, process, decision, input, output bo'lsin. Captionda title, tugun va qirralardagi har bir inglizcha atamaning o'zbekcha muqobilini aniq yoz va 1–2 jumlada sxema nimani ko'rsatishini qisqacha tushuntir; o'zbekcha ishda captionda "Izoh:" belgisi bo'lsin ("Atamalar:" lug'ati bo'lsa, undan keyin). Captionni ixcham saqla. JSONdan tashqari DOT/kod qaytarma.`
-    : "";
-
   // Chapter type instructions
   let typeGuide = "";
   if (isIntro) {
-    typeGuide = `\n\n=== QISM: KIRISH ===
+    typeGuide = `\n\n=== BOB TURI: KIRISH ===
 Yozish kerak:
 - Mavzuning dolzarbligi va ahamiyati (aniq faktlar, statistika bilan)
 - Tadqiqot ob'ekti va predmeti
@@ -580,7 +241,7 @@ Yozish kerak:
 - Ishning tuzilmasi
 KIRISH DA BO'LMAYDI: formula, grafik, jadval, xulosa, tavsiya`;
   } else if (isConclusion) {
-    typeGuide = `\n\n=== QISM: XULOSA ===
+    typeGuide = `\n\n=== BOB TURI: XULOSA ===
 Yozish kerak:
 - Asosiy natijalar (3-5 ta, ro'yxat shaklida)
 - Tadqiqot xulosasi (qisqa, aniq, isbotlangan)
@@ -588,56 +249,42 @@ Yozish kerak:
 - Kelajakdagi rivojlanish istiqbollari
 XULOSA DA BO'LMAYDI: formula, grafik, jadval, yangi nazariy ma'lumotlar, ta'riflar`;
   } else {
-    typeGuide = `\n\n=== ASOSIY REJA BANDI ===
+    typeGuide = `\n\n=== BOB TURI: ASOSIY BOB ===
 Yozish kerak:
-- Ushbu reja bandining o'ziga xos jihatini chuqur tahlil qilish
+- Bu bobning o'ziga xos jihatini chuqur tahlil qilish
 - Aniq faktlar, statistika, ilmiy ma'lumotlar
 - Formulalar, grafiklar, jadvallar (rejaga ko'ra)
-- Boshqa asosiy bo'limlardan FARQLI yangi kontent
+- Boshqa boblardan FARQLI yangi kontent
 
-рџљ« ASOSIY REJA BANDI ICHIDA QAT'IY TA'QIQLANGAN:
+рџљ« ASOSIY BOB ICHIDA QAT'IY TA'QIQLANGAN:
 - "Kirish", "Xulosa", "Yakun", "Umumlashtirish" kabi kichik bo'limlar BO'LMASIN
 - "Kirishda aytilganidek", "xulosa qilib aytganda", "yakunda" iboralar BO'LMASIN
 - 1.1., 1.2., 1.3. nomli bo'limlar bevosita MAVZUNI yoritsin вЂ”
   ularda "kirish" yoki "xulosa" so'zi sarlavhada ham, matnda ham ISHLATILMAYDI
-- Bu alohida mustaqil hujjat emas — Kirish va Xulosa alohida qismlar; ularni takrorlash kerak emas`;
+- Bu bob alohida hujjat emas вЂ” Kirish va Xulosa alohida boblarda berilgan, takrorlash kerak emas`;
   }
 
   // Outline-planned formulas + chart_plans for this chapter
   const plans = Array.isArray(chapter.formula_plans) ? chapter.formula_plans
     : (Array.isArray(chapter.formula_latex) ? chapter.formula_latex.map(l=>({latex:l,concept:""})) : []);
   const plannedFormulas = plans.length > 0
-    ? `\nUshbu reja bandi uchun rejalashtirilgan formulalar (AYNAN SHULARNI ishlatgin):\n${plans.map((f,i)=>{const l=typeof f==="string"?f:f.latex; const c=typeof f==="object"&&f.concept?` вЂ” ${f.concept}`:""; return `  ${i+1}. ${l}${c}`;}).join("\n")}`
+    ? `\nBu bob uchun rejalashtirilgan formulalar (AYNAN SHULARNI ishlatgin):\n${plans.map((f,i)=>{const l=typeof f==="string"?f:f.latex; const c=typeof f==="object"&&f.concept?` вЂ” ${f.concept}`:""; return `  ${i+1}. ${l}${c}`;}).join("\n")}`
     : "";
 
-  const lengthLimit = isMain
-    ? `Jami matn ${wt} so'zdan oshmasin; har bir ichki reja bandi word_targetidan oshmasin.`
-    : `${chapter.title} qismi ${wt} so'zdan oshmasin (maqsad ${wt} so'z; 3 paragraf).`;
-  const paragraphLimit = isMain
-    ? `Paragraflar soni taxminiy emas, QAT'IY ${paraCount} ta: har biri ${minWordsPerParagraph}-${maxWordsPerParagraph} so'z. Har bir ichki reja bandi aynan 3 paragraf, jami ko'pi bilan ${sectionTarget} so'z.`
-    : `Paragraflar soni taxminiy emas, QAT'IY 3 ta: har biri ${minWordsPerParagraph}-${maxWordsPerParagraph} so'z.`;
-
-  return `Mustaqil ishning mazkur qismini yarat.
+  return `Mustaqil ish uchun bob kontentini yarat.
 
 Ish: "${outline.meta?.title || "Mavzu"}" (${lang} tilida)
-Qism: "${chapter.title}" (${chapterIndex+1}/${totalChapters})
-QAT'IY SO'Z CHEGARASI (matn paragrafi bo'yicha): ${lengthLimit}
-${paragraphLimit} Rasm/formula/jadval/oqim sxemasi bu limitdan tashqari, lekin ularni sabab qilib matnni uzaytirma.
+Bob: "${chapter.title}" (${chapterIndex+1}/${totalChapters})
+So'z maqsadi: KAMIDA ${wt} so'z
+Paragraflar: KAMIDA ${paraCount} ta, har biri 100-140 so'z
 
 Formulalar: ${chapter.formula_count || 0} ta${plannedFormulas}
 Grafiklar: ${chapter.chart_count || 0} ta${chartTypeGuide}
-Oqim sxemalari: ${chapter.flowchart_count || 0} ta${flowchartGuide}
 Jadvallar: ${chapter.table_count || 0} ta
-
-ILMIY USLUB VA MANBA INTIZOMI:
-- Rasmiy, ravon ${lang} tilida yoz; so'zlashuv, sleng, tushunarsiz yoki noilmiy iboralarni ishlatma. Masalan, "boshqaruv telbalashadi" kabi ifodalar taqiqlanadi; o'rniga texnik jihatdan aniq atama ishlat.
-- Birinchi shaxsda ("men kuzatdim", "menimcha") yozma; tahlilni betaraf ilmiy bayon qil.
-- Berilgan manbalar ro'yxatidan chetga chiqma; tekshirilmagan real statistika, yil, foiz yoki o'lchov natijasini keltirma.
-- Graphviz ichidagi title, node va edge matnini model bergandek saqla; inglizcha so'zlar qolishi mumkin. Ularning o'zbekcha muqobillari va izohi captionda bo'lsin.
 
 Umumiy tuzilma:
 ${allTitles}
-${sectionGuide}${contentNote}${formulaBan}${chartBan}${typeGuide}
+${contentNote}${formulaBan}${chartBan}${typeGuide}
 
 JSON qaytargin:
 {
@@ -655,27 +302,19 @@ CONTENT BLOKLARI:
 2. Sarlavha: {"type":"heading","level":2,"text":"1.1. ..."}
 
 3. Formula (formula_count > 0, faqat aniq fan mavzusi):
-   {"type":"formula","latex":"<yuqorida rejalashtirilgan latex>","display_text":"<inson o'qiydigan>","caption":"<nomi va mazmuni>"}
+   {"type":"formula","latex":"<yuqorida rejalashtirilgan latex>","display_text":"<inson o'qiydigan>","caption":"<nomi va mazmuni>","number":1}
    - Formuladan OLDIN 2-3 jumla kontekst, KEYIN 2-3 jumla tahlil
-   - FAQAT rejalashtirilgan formulalar — o'zboshimchalik bilan boshqa formula qo'shma
-   - Formula va grafik captionlarida raqam yozma; DOCX raqamlarni hujjat bo'ylab o'zi ketma-ket qo'yadi.
+   - FAQAT rejalashtirilgan formulalar вЂ” o'zboshimchalik bilan boshqa formula qo'shma
 
 4. Grafik (chart_count > 0):
-   {"type":"chart","chartType":"${chapter.chart_type || "bar"}","title":"<yangi sarlavha>","labels":["..."],"values":[...],"unit":"","data_source":"<tekshiriladigan manba yoki 'namunaviy sintetik ma'lumot'>","caption":"<nomi va izohi>"}
-   - labels va values soni teng bo'lsin; barcha qiymatlar son, finite va shu birlikda bo'lsin; pie qiymatlari manfiy bo'lmasin.
-   - Haqiqiy statistik ma'lumotni uydirma. Faqat foydalanuvchi manbasi yoki ko'rsatilgan manbaga tayangan raqam ishlat; bunday manba bo'lmasa namunaviy qiymat ekanini data_source va captionda aniq yoz.
+   {"type":"chart","chartType":"${chapter.chart_type || "bar"}","title":"<yangi sarlavha>","labels":["..."],"values":[...],"unit":"","caption":"N-rasm. ...","number":1}
+   - Realistik raqamlar вЂ” mavzuga aniq aloqador
    - labels: 4-6 ta, qisqa (1-3 so'z)
    - GRAFIKDAN OLDIN 1-2 jumla, KEYIN 1-2 jumla tahlil
 
 5. Jadval (table_count > 0):
    {"type":"table","caption":"N-jadval. ...","number":1,"headers":["..."],"rows":[["..."]]}
    - Kamida 3 ustun, 3-6 qator
-
-6. Graphviz oqim sxemasi (flowchart_count > 0):
-   {"type":"flowchart","title":"<rejadagi sarlavha>","caption":"Atamalar: <inglizcha atama — o'zbekcha muqobil>. Izoh: <sxemaning qisqa ta'rifi>.","nodes":[{"id":"start","label":"<tugun matni>","kind":"start"},{"id":"step1","label":"<jarayon bosqichi>","kind":"process"},{"id":"check","label":"<qaror savoli>","kind":"decision"},{"id":"finish","label":"<yakun>","kind":"end"}],"edges":[{"from":"start","to":"step1","label":""},{"from":"step1","to":"check","label":""},{"from":"check","to":"finish","label":"Ha"}]}
-   - Bitta rejali flowchartni aynan bir marta, asosiy bo'limda qaytar; tugun id'lari lotin harfi bilan boshlansin.
-   - Har bir tugun yorlig'i qisqa bo'lsin; model inglizcha so'z yoki atama qaytarsa, Graphviz ichida aynan o'sha matn qolsin, captionda esa uning o'zbekcha muqobili bo'lishi shart; qaror tugunlaridan chiqadigan qirralarga "Ha/Yo'q" yoki "Yes/No" kabi yorliq berilishi mumkin.
-   - Diagrammadan oldin va keyin 1-2 jumla izoh ber; Graphviz DOT manbasini hech qachon JSON ichida yozma.
 
 SIFAT QOIDALARI:
 - ${lang} tilida, rasmiy akademik uslub
@@ -724,7 +363,6 @@ function collectUsedFormulasAndCharts(chapters) {
 module.exports = {
   outlineSystemPrompt, outlineUserPrompt, parseOutline,
   chapterSystemPrompt, chapterUserPrompt, parseChapter,
-  WORDS_PER_PAGE, pagePlan, normalizeOutlineForPages,
   wordsForPages,
   extractFormulasFromContent, extractChartTitlesFromContent, collectUsedFormulasAndCharts,
   // Yangi: normalizatsiya va o'xshashlik tekshiruvi
@@ -793,7 +431,7 @@ function paragraphSimilarity(textA, textB) {
   return union > 0 ? intersect / union : 0;
 }
 
-// в”Ђв”Ђв”Ђ ASOSIY REJA BANDI ICHIDA KIRISH/XULOSA ANIQLASH в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// в”Ђв”Ђв”Ђ ASOSIY BOB ICHIDA KIRISH/XULOSA ANIQLASH в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 function detectForbiddenIntroConclusion(content, role) {
   if (role === "introduction" || role === "conclusion") return [];
   if (!Array.isArray(content)) return [];

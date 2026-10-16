@@ -18,7 +18,7 @@ function slug(s) {
   return (s || "taqdimot").toLowerCase().replace(/[^a-z0-9\u0400-\u04FF]+/gi, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "taqdimot";
 }
 
-// kesh kaliti: ish turi + mavzu + sahifa rejasi/so'rovi + kontent + talaba metadata xeshi
+// kesh kaliti: ish turi + mavzu (normallashtirilgan) + son + kontent xeshi
 // MUHIM: work_type kalitda bo'lishi shart — aks holda bir xil mavzuli
 // taqdimot va mustaqil ish to'qnashib, noto'g'ri fayl yuborilishi mumkin.
 function cacheKey(order) {
@@ -26,16 +26,9 @@ function cacheKey(order) {
   const contentHash = order.content_text
     ? crypto.createHash("md5").update(order.content_text).digest("hex").slice(0, 8)
     : "ai";
-  const metadataHash = crypto.createHash("sha256")
-    .update([order.student_name || "", order.student_group || "", order.language || ""].join("\u001f"))
-    .digest("hex").slice(0, 8);
   const wt = order.work_type || "taqdimot";
-  const plannedPages = order.pages || "?";
-  const requestedPages = order.requested_pages || plannedPages;
-  const count = wt === "mustaqil"
-    ? (plannedPages === requestedPages ? plannedPages : `${plannedPages}-requested-${requestedPages}`)
-    : (order.slides || "?");
-  return `${wt}|${norm}|${count}|${contentHash}|${metadataHash}`;
+  const count = wt === "mustaqil" ? (order.pages || "?") : (order.slides || "?");
+  return `${wt}|${norm}|${count}|${contentHash}`;
 }
 
 async function fulfillOrder(orderId) {
@@ -52,7 +45,7 @@ async function fulfillOrder(orderId) {
     if (cached && cached.file_id) {
       const isMustaqilC = order.work_type === "mustaqil";
       const capC = isMustaqilC
-        ? `📄 Mustaqil ishingiz tayyor!\n\n📌 Mavzu: ${order.topic}\n📋 Sahifa rejasi: ${order.pages || "?"} ta\n\n(Tezkor yetkazildi)`
+        ? `📄 Mustaqil ishingiz tayyor!\n\n📌 Mavzu: ${order.topic}\n📋 Sahifalar: ${order.pages || "?"} ta\n\n(Tezkor yetkazildi)`
         : `🎉 Taqdimotingiz tayyor!\n\n📌 Mavzu: ${order.topic}\n📄 Slaydlar: ${order.slides || "?"} ta\n\n(Tezkor yetkazildi)`;
       await _bot.api.sendDocument(order.user_tg_id, cached.file_id, { caption: capC });
       updateOrder(orderId, { status: "done", file_id: cached.file_id });
@@ -80,8 +73,8 @@ async function fulfillOrder(orderId) {
   try {
     let res;
     if (isMustaqil) {
-      res = await generateMustaqilIsh({ topic: order.topic, pages: order.requested_pages || order.pages || 15,
-        language: order.language || "o'zbek", studentName: order.student_name || "", studentGroup: order.student_group || "",
+      res = await generateMustaqilIsh({ topic: order.topic, pages: order.pages || 15,
+        language: "o\'zbek", studentName: order.student_name || "", studentGroup: order.student_group || "",
         org: "", supervisor: "", sourceContent: order.content_text || "", llm: llmCfg, outFile });
       res.slideCount = order.pages || 15;
     } else {
@@ -92,7 +85,7 @@ async function fulfillOrder(orderId) {
     }
 
     const caption = isMustaqil
-      ? "📄 Mustaqil ishingiz tayyor!\n\n📌 Mavzu: " + order.topic + "\n📋 Sahifa rejasi: " + (res.pageCount || order.pages || 15) + " ta"
+      ? "📄 Mustaqil ishingiz tayyor!\n\n📌 Mavzu: " + order.topic + "\n📋 Sahifalar: " + (order.pages||15) + " ta"
       : "🎉 Taqdimot tayyor!\n\n📌 Mavzu: " + order.topic + "\n📄 Slaydlar: " + res.slideCount + " ta";
 
     // 3) KANALGA YUBORISH (kesh uchun file_id olamiz)

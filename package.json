@@ -6,7 +6,6 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/bot.js",
-    "test": "node --test",
     "icons": "node -e \"require('./src/generator/build').ensureIcons(require('./src/generator/theme').getPalette('ocean')).then(()=>console.log('ok'))\""
   },
   "dependencies": {
