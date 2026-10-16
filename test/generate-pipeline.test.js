@@ -217,6 +217,49 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
   }
 });
 
+test("Graphviz renderlari yiqilsa ham pipeline qolgan media bilan DOCX tayyorlaydi", async () => {
+  const originalFetch = global.fetch;
+  const originalPath = process.env.PATH;
+  const mediaAttempts = new Map();
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "slidepro-flowchart-fallback-"));
+  const outFile = path.join(tempDir, "fallback.docx");
+  global.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    const userPrompt = body.messages.find(message => message.role === "user")?.content || "";
+    let payload;
+    if (userPrompt.includes("BIBLIOGRAFIYANI TUZATISH")) payload = { references };
+    else if (userPrompt.includes("Akademik mustaqil ish uchun tuzilma")) payload = fakeOutline(references.slice(0, 7));
+    else if (userPrompt.includes("MEDIA AJRATISH QOIDASI")) payload = proseResponse(userPrompt);
+    else if (userPrompt.includes("Slot ID:")) payload = mediaResponse(userPrompt, mediaAttempts);
+    else throw new Error(`Kutilmagan LLM prompt: ${userPrompt.slice(0, 100)}`);
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) } }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  process.env.PATH = "";
+
+  try {
+    const result = await generateMustaqilIsh({
+      topic: "Avtomatik boshqaruv tizimlari", pages: 16, language: "o'zbek", outFile,
+      llm: { provider: "openai", openaiKey: "mock-key", openaiModel: "mock-model" },
+    });
+    assert.equal(result.title, "Pipeline sinovi");
+    assert.equal(fs.existsSync(outFile), true, "bitta Graphviz muammosi hujjatni bekor qilmasin");
+    const archive = await JSZip.loadAsync(fs.readFileSync(outFile));
+    const mediaFiles = Object.keys(archive.files).filter(name => name.startsWith("word/media/") && !archive.files[name].dir);
+    assert.equal(mediaFiles.length, 4, "valid formula/chart rasmlari qoladi, render xatosi bo‘lgan flowchart rasmlari kiritilmaydi");
+    const documentXml = await archive.file("word/document.xml").async("string");
+    assert.equal((documentXml.match(/<w:drawing>/g) || []).length, 4);
+    assert.match(documentXml, /\[Oqim sxemasi:/, "flowchart rasm bo‘lmasa ham uning xavfsiz matnli fallbacki qoladi");
+  } finally {
+    global.fetch = originalFetch;
+    if (originalPath == null) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("SLIDEPRO_LLM_CONCURRENCY qiymati hech qachon 3 dan oshmaydi", async () => {
   const original = process.env.SLIDEPRO_LLM_CONCURRENCY;
   process.env.SLIDEPRO_LLM_CONCURRENCY = "6";

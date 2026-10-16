@@ -560,7 +560,8 @@ async function generateMediaSlot(slot, { chapter, topic, language, sourceContent
     console.warn(`[mustaqil] media slot ${slot.slot_id} sintetik/reja fallback bilan to'ldirildi (${lastError?.message || "xato"})`);
     return { slot, item, image, fallback: true };
   } catch (error) {
-    throw new Error(`Media slot ${slot.slot_id} fallback render-verifikatsiyasidan o'tmadi: ${error.message}`);
+    console.warn(`[mustaqil] media slot ${slot.slot_id} fallback rasmi ham yaroqsiz — DOCX’da tasvir o‘rniga xavfsiz matnli fallback ishlatiladi (${error.message})`);
+    return { slot, item, image: null, fallback: true, renderError: error };
   }
 }
 
@@ -1179,7 +1180,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   const diagrams = chapters.flatMap(chapter => chapter.content || []).filter(item => ["formula", "chart", "flowchart"].includes(item?.type));
   const unverified = diagrams.filter(item => !verifiedCache.has(`${item.type === "formula" ? "f" : item.type === "chart" ? "c" : "d"}_${item.number}`));
   if (unverified.length) {
-    throw new Error(`Word yig'ishdan oldin ${unverified.length} ta formula/grafik/Graphviz rasmi render-verifikatsiyasidan o'tmadi: ${unverified.map(item => item.slot_id || `${item.type} ${item.number}`).join(", ")}`);
+    console.warn(`[mustaqil] ${unverified.length} ta media rasmi render-verifikatsiyasidan o'tmadi; hujjat yaroqsiz tasvirsiz davom etadi: ${unverified.map(item => item.slot_id || `${item.type} ${item.number}`).join(", ")}`);
   }
   const pngCache = await prerenderMedia(chapters, lang, verifiedCache);
   const spec = { meta:outline.meta, chapters, references:outline.references||[] };

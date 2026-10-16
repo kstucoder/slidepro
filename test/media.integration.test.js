@@ -1,10 +1,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const JSZip = require("jszip");
 const sharp = require("sharp");
 const { renderFormula } = require("../src/mustaqil/formula");
 const { renderChart, wrapLabelLines, barSVG, lineSVG } = require("../src/mustaqil/chart");
-const { renderFlowchart } = require("../src/mustaqil/flowchart");
+const { buildFlowchartDot, renderFlowchart } = require("../src/mustaqil/flowchart");
 const { buildDocument } = require("../src/mustaqil/builder");
 const { prerenderMedia } = require("../src/mustaqil/generate");
 
@@ -46,7 +47,7 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
   const centerOffset = (150 * piePixels.info.width + 180) * piePixels.info.channels;
   assert.notDeepEqual([...piePixels.data.subarray(centerOffset, centerOffset + 3)], [255, 255, 255], "100% li pie bo‘lagi to‘liq doira sifatida chizilishi kerak");
 
-  const flowchart = await renderFlowchart({
+  const flowchartInput = {
     type: "flowchart",
     title: "Ichimlik suvini tozalash tarkibi",
     nodes: [
@@ -63,11 +64,29 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
       { from: "filter", to: "deliver" },
     ],
     caption: "Izoh: suv manbai, filtrlash, dezinfeksiya va sifat mezonining o'zaro aloqalari.",
+  };
+  const baselineDot = buildFlowchartDot(flowchartInput, { wrapLabels: false, ranksepMultiplier: 1 });
+  const baselinePng = spawnSync("dot", ["-Kdot", "-Tpng", "-Gdpi=160"], {
+    input: baselineDot,
+    maxBuffer: 8 * 1024 * 1024,
   });
+  assert.equal(baselinePng.status, 0, baselinePng.stderr?.toString("utf8") || "baseline Graphviz render xatosi");
+  const baselineNormalized = await sharp(baselinePng.stdout)
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .resize({ width: 1400, height: 1800, fit: "inside", withoutEnlargement: true })
+    .png()
+    .toBuffer();
+  const baselineMetadata = await sharp(baselineNormalized).metadata();
+  const baselineScale = Math.min(520 / baselineMetadata.width, 620 / baselineMetadata.height, 1);
+  const baselineHeight = Math.round(baselineMetadata.height * baselineScale);
+
+  const flowchart = await renderFlowchart(flowchartInput);
   const flowchartMetadata = await sharp(flowchart.buf).metadata();
   assert.equal(flowchartMetadata.format, "png");
   assert.ok(flowchart.width > 0 && flowchart.width <= 520);
   assert.ok(flowchart.height > 0 && flowchart.height <= 620);
+  assert.ok(flowchart.height >= Math.ceil(baselineHeight * 1.5), "oqim sxemasi avvalgi balandligidan kamida 50% baland bo‘lsin");
+  assert.ok(Math.abs(flowchart.width / flowchart.height - flowchartMetadata.width / flowchartMetadata.height) < 0.01, "balandlik oshganda rasm proporsiyasi saqlansin");
   imageCache.set("d_2", flowchart);
 
   const controllerFlowchart = await renderFlowchart({
@@ -102,7 +121,7 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
           { type: "heading", level: 2, text: "1.1. Nazariy asoslar" },
           { type: "formula", number: 1, latex: formulaCases[0].latex, caption: "N-formula. Sinov formulasi" },
           {
-            type: "chart", number: 1, title: "Sinov grafik", caption: "N-rasm. Sinov diagrammasi",
+            type: "chart", number: 1, chartType: "bar", title: "Sinov grafik", caption: "N-rasm. Sinov diagrammasi",
             labels: ["A", "B"], values: [1, 2], data_source: "sintetik sinov ma’lumoti",
           },
           {
@@ -120,7 +139,7 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
         content: [
           { type: "formula", number: 1, latex: formulaCases[1].latex, caption: "1-formula. Ikkinchi formula" },
           {
-            type: "chart", number: 1, title: "Ikkinchi grafik", caption: "N-rasm. Ikkinchi diagramma",
+            type: "chart", number: 1, chartType: "line", title: "Ikkinchi grafik", caption: "N-rasm. Ikkinchi diagramma",
             labels: ["C", "D"], values: [3, 4], data_source: "Official statistical yearbook",
           },
           {
@@ -165,16 +184,21 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
   assert.equal((referencesXml.match(/https:\/\/doi\.org\/10\./g) || []).length, 12);
 });
 
-test("DOCX oqim sxemasini sahifa enining/balandligining 60 foizidan kichik qilib, nisbatini saqlaydi", async () => {
-  const oversizedPng = await sharp({
+test("DOCX’dagi barcha diagrammalar sahifa eni/balandligining 60 foizidan oshmaydi va nisbatini saqlaydi", async () => {
+  const widePng = await sharp({
     create: { width: 2000, height: 1000, channels: 4, background: { r: 230, g: 240, b: 250, alpha: 1 } },
+  }).png().toBuffer();
+  const tallPng = await sharp({
+    create: { width: 1000, height: 2000, channels: 4, background: { r: 240, g: 230, b: 250, alpha: 1 } },
   }).png().toBuffer();
   const docx = await buildDocument({
     meta: { title: "Suvni tozalash", student_name: "", student_group: "", supervisor: "" },
     chapters: [{
       id: "ch1", title: "Suvni tozalash tarkibi",
       content: [{
-        type: "flowchart", number: 1, title: "Suvni tozalash tarkibi", caption: "Izoh: suvni filtrlash va sifat nazorati.",
+        type: "chart", number: 1, chartType: "bar", title: "Suv ko‘rsatkichlari", labels: ["A", "B"], values: [1, 2],
+      }, {
+        type: "flowchart", number: 2, title: "Suvni tozalash tarkibi", caption: "Izoh: suvni filtrlash va sifat nazorati.",
         nodes: [
           { id: "source", label: "Xom suv manbai", kind: "input" },
           { id: "filter", label: "Filtrlash tizimi", kind: "process" },
@@ -186,19 +210,27 @@ test("DOCX oqim sxemasini sahifa enining/balandligining 60 foizidan kichik qilib
       }],
     }],
     references: [],
-  }, new Map([["d_1", { buf: oversizedPng, width: 2000, height: 1000 }]]));
+  }, new Map([
+    ["c_1", { buf: widePng, width: 2000, height: 1000 }],
+    ["d_2", { buf: tallPng, width: 1000, height: 2000 }],
+  ]));
   const archive = await JSZip.loadAsync(docx);
   const documentXml = await archive.file("word/document.xml").async("string");
-  const drawingParagraph = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) || []).find(paragraph => paragraph.includes("<w:drawing>"));
-  assert.ok(drawingParagraph, "diagram Word paragrafida rasm sifatida joylashadi");
-  const extent = drawingParagraph.match(/<wp:extent cx="(\d+)" cy="(\d+)"/);
-  assert.ok(extent, "DOCX rasmining real EMU o‘lchami mavjud bo‘lsin");
-  const cx = Number(extent[1]);
-  const cy = Number(extent[2]);
-  assert.ok(cx <= 210 * 36_000 * 0.6, "rasm eni sahifa enining 60 foizidan oshmasin");
-  assert.ok(cy <= 297 * 36_000 * 0.6, "rasm bo‘yi sahifa balandligining 60 foizidan oshmasin");
-  assert.ok(Math.abs(cx / cy - 2) < 0.01, "rasm proporsiyasi o‘zgarmasin");
-  assert.ok(Math.abs(cx - 210 * 36_000 * 0.6) < 9_525, "keng tasvir 60 foizlik limitga qisqartirilsin");
+  const drawings = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) || []).filter(paragraph => paragraph.includes("<w:drawing>"));
+  assert.equal(drawings.length, 2, "chart va flowchart alohida rasm sifatida joylashadi");
+  const extents = drawings.map(paragraph => {
+    const extent = paragraph.match(/<wp:extent cx="(\d+)" cy="(\d+)"/);
+    assert.ok(extent, "DOCX rasmning real EMU o‘lchamini saqlasin");
+    return { width: Number(extent[1]), height: Number(extent[2]) };
+  });
+  extents.forEach(({ width, height }) => {
+    assert.ok(width <= 210 * 36_000 * 0.6, "rasm eni sahifa enining 60 foizidan oshmasin");
+    assert.ok(height <= 297 * 36_000 * 0.6, "rasm bo‘yi sahifa balandligining 60 foizidan oshmasin");
+  });
+  assert.ok(Math.abs(extents[0].width / extents[0].height - 2) < 0.01, "keng rasm proporsiyasi o‘zgarmasin");
+  assert.ok(Math.abs(extents[1].width / extents[1].height - 0.5) < 0.01, "baland rasm proporsiyasi o‘zgarmasin");
+  assert.ok(Math.abs(extents[0].width - 210 * 36_000 * 0.6) < 9_525, "keng tasvir 60 foizlik en limitiga qisqartirilsin");
+  assert.ok(Math.abs(extents[1].height - 297 * 36_000 * 0.6) < 9_525, "baland tasvir 60 foizlik balandlik limitiga qisqartirilsin");
 });
 
 test("uzun chart X-o'qi yorliqlari satrlarga o'raladi va to'liq matnni saqlaydi", async () => {
@@ -231,10 +263,16 @@ test("media renderi xato bo'lsa ham DOCX matnli fallback bilan tayyorlanadi", as
     content: [
       { type: "chart", number: 1, title: "Fallback grafik", caption: "Grafik captioni", chartType: "invalid", labels: ["A", "B"], values: [1, 2], data_source: "Sintetik illustrativ ma'lumot; real o'lchov emas" },
       { type: "flowchart", number: 2, title: "Fallback oqim sxemasi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [], edges: [] },
+      { type: "flowchart", number: 3, title: "Buzilgan PNG sinovi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [{ id: "a", label: "Birinchi bosqich", kind: "process" }, { id: "b", label: "Ikkinchi bosqich", kind: "process" }, { id: "c", label: "Uchinchi bosqich", kind: "process" }, { id: "d", label: "To‘rtinchi bosqich", kind: "process" }, { id: "e", label: "Beshinchi bosqich", kind: "process" }], edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }, { from: "d", to: "b" }, { from: "b", to: "e" }] },
     ],
   };
   const cache = await prerenderMedia([chapter]);
-  assert.equal(cache.size, 0, "ikkala media rasmi render xatosi sabab keshga kirmasligi kerak");
+  assert.equal(cache.size, 1, "faqat valid flowchart PNG keshga kirishi kerak");
+  assert.ok(cache.has("d_3"));
+  const validPng = await sharp({ create: { width: 100, height: 100, channels: 4, background: "white" } }).png().toBuffer();
+  cache.set("c_1", { buf: validPng, width: 100, height: 100 });
+  cache.set("d_2", { buf: validPng, width: 100, height: 100 });
+  cache.set("d_3", { buf: Buffer.from("not a PNG"), width: 100, height: 100 });
 
   const docx = await buildDocument({
     meta: { title: "Media fallback sinovi", student_name: "", student_group: "", supervisor: "" },
@@ -248,6 +286,9 @@ test("media renderi xato bo'lsa ham DOCX matnli fallback bilan tayyorlanadi", as
   assert.equal(docx.subarray(0, 2).toString("ascii"), "PK");
   const zip = await JSZip.loadAsync(docx);
   const documentXml = await zip.file("word/document.xml").async("string");
+  const mediaEntries = Object.keys(zip.files).filter(name => name.startsWith("word/media/") && !zip.files[name].dir);
+  assert.equal(mediaEntries.length, 0, "noto‘g‘ri diagramma data yoki buzilgan PNG DOCX media ichiga kirmasin");
+  assert.doesNotMatch(documentXml, /<w:drawing>/, "xato yoki tekshirilmagan diagramma rasmi DOCX’da bo‘lmasin");
   assert.match(documentXml, /Fallback grafik/);
   assert.doesNotMatch(documentXml, /sintetik|synthetic|real o(?:'|&apos;)lchov emas/i);
   assert.match(documentXml, /Fallback oqim sxemasi/);

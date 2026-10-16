@@ -33,7 +33,9 @@ test("Graphviz oqim sxemasi xavfsiz JSON sxemasi va DOT string escaping bilan tu
   assert.equal(normalizeFlowchartData(validFlowchart).nodes.length, 5);
   const dot = buildFlowchartDot(validFlowchart);
   assert.match(dot, /digraph Flowchart/);
-  assert.match(dot, /label="Filtrlash \\\"; system/);
+  assert.match(dot, /ranksep="0\.51"/, "qatorlar oralig‘i balandlikni 50% oshirish uchun kengayadi");
+  assert.ok(dot.includes(`label="Suvni tozalash${String.fromCharCode(92)}ntarkibi va aloqalari"`), "uzun sarlavha kenglikni toraytirib, balandlikni oshirish uchun o‘raladi");
+  assert.ok(dot.includes(`Filtrlash ${String.fromCharCode(92)}"`) && dot.includes(`${String.fromCharCode(92)}nsystem`), "o‘ralgan label ichidagi qo‘shtirnoq Graphviz uchun escape qilinsin");
   assert.match(dot, /Suv sifati/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, id: 'x; system("bad")' }) }), /xavfsiz format/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, edges: [{ from: "source", to: "missing" }, ...validFlowchart.edges.slice(1)] }), /mavjud bo'lmagan node/);
@@ -110,7 +112,7 @@ test("o‘zbekcha ishda Graphviz ichidagi inglizcha title, tugun va qirra matni 
   assert.deepEqual(normalized.edges.map(edge => edge.label), ["", "", "", ""]);
   const visibleText = [normalized.title, ...normalized.nodes.map(node => node.label), ...normalized.edges.map(edge => edge.label)].join(" ");
   assert.match(visibleText, /\b(?:start|end|sensor|controller|input|output|yes|no|feedback|control|system)\b/i);
-  assert.match(buildFlowchartDot(englishLabels), /label="Feedback control system"/);
+  assert.match(buildFlowchartDot(englishLabels), /label="Feedback control\\nsystem"/);
 
   const mixedLanguage = normalizeFlowchartData({ ...englishLabels, title: "Modeldan vaqt-domain javobigacha" }, { language: "o'zbek" });
   assert.equal(mixedLanguage.title, "Modeldan vaqt-domain javobigacha");

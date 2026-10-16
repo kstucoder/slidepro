@@ -6,6 +6,8 @@ const { getFlowchartTemplate } = require("./flowchart-templates");
 const MAX_DOT_BYTES = 64 * 1024;
 const MAX_PNG_BYTES = 8 * 1024 * 1024;
 const RENDER_TIMEOUT_MS = 15_000;
+const FLOWCHART_HEIGHT_SCALE = 1.5;
+const FLOWCHART_LABEL_LINE_LENGTH = 20;
 
 function escapeDotText(value) {
   return String(value)
@@ -15,19 +17,47 @@ function escapeDotText(value) {
     .replace(/\r\n|\r|\n/g, "\\n");
 }
 
-function buildFlowchartDot(input) {
+function wrapFlowchartLabel(value, maxLineLength = FLOWCHART_LABEL_LINE_LENGTH) {
+  const lines = [];
+  let line = "";
+  for (const word of String(value).trim().split(/\s+/).filter(Boolean)) {
+    const parts = [];
+    const characters = Array.from(word);
+    for (let offset = 0; offset < characters.length; offset += maxLineLength) {
+      parts.push(characters.slice(offset, offset + maxLineLength).join(""));
+    }
+    for (const part of parts) {
+      if (line && line.length + 1 + part.length > maxLineLength) {
+        lines.push(line);
+        line = part;
+      } else {
+        line += `${line ? " " : ""}${part}`;
+      }
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
+}
+
+function buildFlowchartDot(input, { wrapLabels = true, ranksepMultiplier = FLOWCHART_HEIGHT_SCALE } = {}) {
   const flowchart = normalizeFlowchartData(input);
   const template = getFlowchartTemplate(input?.template_id);
-  const graphAttrs = template.graphAttrs;
+  const graphAttrs = template.graphAttrs.map(attribute => {
+    const ranksep = attribute.match(/^ranksep="([\d.]+)"$/);
+    return ranksep
+      ? `ranksep="${(Number(ranksep[1]) * ranksepMultiplier).toFixed(2)}"`
+      : attribute;
+  });
+  const graphTitle = wrapLabels ? wrapFlowchartLabel(flowchart.title) : flowchart.title;
   const lines = [
     "digraph Flowchart {",
-    `  graph [${[...graphAttrs, 'bgcolor="white"', 'pad="0.18"', 'fontname="DejaVu Sans"', 'labelloc="t"', `label="${escapeDotText(flowchart.title)}"`, 'fontsize=18', 'fontcolor="#18324B"'].join(", ")}];`,
+    `  graph [${[...graphAttrs, 'bgcolor="white"', 'pad="0.18"', 'fontname="DejaVu Sans"', 'labelloc="t"', `label="${escapeDotText(graphTitle)}"`, 'fontsize=18', 'fontcolor="#18324B"'].join(", ")}];`,
     '  node [color="#457B9D", penwidth=1.4, fontname="DejaVu Sans", fontsize=12, fontcolor="#18324B", margin="0.16,0.10"];',
     `  edge [${[...template.edgeAttrs, 'fontname="DejaVu Sans"', 'fontsize=10', 'fontcolor="#40566B"'].join(", ")}];`,
   ];
 
   const nodeLine = node => {
-    const label = escapeDotText(node.label);
+    const label = escapeDotText(wrapLabels ? wrapFlowchartLabel(node.label) : node.label);
     const options = template.nodeAttrs[node.kind] || template.nodeAttrs.process;
     return `    ${node.id} [label="${label}", ${options}];`;
   };

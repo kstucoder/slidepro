@@ -10,10 +10,13 @@ const {
   WidthType, BorderStyle, TableLayoutType, VerticalAlign,
   NumberFormat, SectionType, UnderlineType,
 } = require("docx");
+const sharp = require("sharp");
 const { normalizeHeadingTitle } = require("./headings");
 const { renumberMedia } = require("./media-numbering");
 const { completeBibliography, sortReferencesAPA, parseApaPartsForDisplay } = require("./references");
 const { cleanMediaText, isSyntheticSource } = require("./media-captions");
+const { normalizeChartData } = require("./chart-data");
+const { normalizeFlowchartData } = require("./flowchart-data");
 
 const mm = (n) => Math.round(n * 56.692);
 
@@ -191,15 +194,15 @@ function numberedMediaCaption(number, type, ...values) {
 }
 
 // ─── rasm bloki ────────────────────────────────────────────
-function imageBlock(media, caption, { maxPageFraction } = {}) {
+function imageBlock(media, caption, { maxPageFraction = 0.6 } = {}) {
   const buf = media.buf || media;
   const w = media.width || 440;
   const h = media.height || 200;
   const scale = maxPageFraction
     ? Math.min(1, A4_PAGE_WIDTH_PX * maxPageFraction / w, A4_PAGE_HEIGHT_PX * maxPageFraction / h)
     : 1;
-  const imageWidth = Math.max(1, Math.round(w * scale));
-  const imageHeight = Math.max(1, Math.round(h * scale));
+  const imageWidth = Math.max(1, Math.floor(w * scale));
+  const imageHeight = Math.max(1, Math.floor(h * scale));
   const nodes = [];
   nodes.push(new Paragraph({
     children: [new ImageRun({ data: buf, transformation: { width: imageWidth, height: imageHeight }, type: "png" })],
@@ -211,6 +214,40 @@ function imageBlock(media, caption, { maxPageFraction } = {}) {
   }));
   if (caption) nodes.push(captionPara(caption));
   return nodes;
+}
+
+async function verifiedImageCache(chapters, pngCache) {
+  const cache = new Map(pngCache instanceof Map ? pngCache : []);
+  const checkedKeys = new Set();
+  const prefixByType = { formula: "f", chart: "c", flowchart: "d" };
+  for (const chapter of chapters || []) {
+    for (const item of chapter.content || []) {
+      const prefix = prefixByType[item?.type];
+      if (!prefix || !Number.isFinite(Number(item.number))) continue;
+      const key = `${prefix}_${item.number}`;
+      if (!cache.has(key) || checkedKeys.has(key)) continue;
+      checkedKeys.add(key);
+      const media = cache.get(key);
+      try {
+        if (item.type === "chart") normalizeChartData(item);
+        if (item.type === "flowchart") normalizeFlowchartData(item);
+        const buf = Buffer.isBuffer(media) ? media : media?.buf;
+        const width = Buffer.isBuffer(media) ? 440 : Number(media?.width);
+        const height = Buffer.isBuffer(media) ? 200 : Number(media?.height);
+        if (!Buffer.isBuffer(buf) || !buf.length || !Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+          throw new Error("rasm buferi yoki o‘lchami yaroqsiz");
+        }
+        const metadata = await sharp(buf).metadata();
+        if (metadata.format !== "png" || !metadata.width || !metadata.height) {
+          throw new Error("render natijasi yaroqli PNG emas");
+        }
+      } catch (error) {
+        cache.delete(key);
+        console.warn(`[mustaqil] ${item.type} #${item.number} tekshiruvdan o‘tmadi — rasm DOCX’ga qo‘shilmadi (${error.message})`);
+      }
+    }
+  }
+  return cache;
 }
 
 // ─── jadval bloki ──────────────────────────────────────────
@@ -438,7 +475,7 @@ function buildChapterContent(chapter, pngCache, isFirst, mainNumber = 0) {
         const media = pngCache && pngCache.get("d_" + item.number);
         const caption = numberedMediaCaption(item.number, "rasm", item.caption, item.title);
         if (media) {
-          nodes.push(...imageBlock(media, caption, { maxPageFraction: 0.6 }));
+          nodes.push(...imageBlock(media, caption));
         } else {
           console.warn(`[mustaqil] flowchart #${item.number} render qilinmagan — matn ko'rinishida chiqariladi`);
           nodes.push(captionPara(caption));
@@ -493,6 +530,7 @@ function buildReferences(refs = [], topic = "mavzu") {
 async function buildDocument(fullSpec, pngCache) {
   const { meta, chapters = [], references = [] } = fullSpec;
   renumberMedia(chapters);
+  const safePngCache = await verifiedImageCache(chapters, pngCache);
 
   // Joriy yilni majburiy o'rnatish (LLM eski yil yozishi mumkin)
   if (meta) meta.year = String(new Date().getFullYear());
@@ -505,7 +543,7 @@ async function buildDocument(fullSpec, pngCache) {
   chapters.forEach((ch, i) => {
     // Kirish headingi pageBreakBefore bilan REJA'dan keyin boshlanadi.
     if (ch.id !== "intro" && ch.id !== "conclusion") mainNumber++;
-    const chNodes = buildChapterContent(ch, pngCache, i === 0, mainNumber);
+    const chNodes = buildChapterContent(ch, safePngCache, i === 0, mainNumber);
     contentNodes.push(...chNodes);
   });
 

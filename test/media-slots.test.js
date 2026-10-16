@@ -336,6 +336,40 @@ test("yaroqsiz Graphviz ma'lumoti retryda bir xil shablonni saqlab, render qilin
   }
 });
 
+test("Graphviz va fallback renderi ishlamasa, media xatosi butun hujjatni to‘xtatmaydigan rasmsiz natija qaytaradi", async () => {
+  const originalFetch = global.fetch;
+  const originalPath = process.env.PATH;
+  let requests = 0;
+  global.fetch = async () => {
+    requests++;
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      slot_id: "ch1:flowchart:1", type: "flowchart", title: "Yaroqsiz sxema", nodes: [], edges: [],
+    }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  process.env.PATH = "";
+
+  try {
+    const slot = {
+      slot_id: "ch1:flowchart:1", type: "flowchart", ordinal: 1,
+      plan: { title: "Suvni tozalash tarkibi", purpose: "suvni filtrlash va sifat nazoratini tushuntirish" },
+    };
+    const result = await generateMediaSlot(slot, {
+      chapter: { id: "ch1", title: "Suvni tozalash", role: "methodology" },
+      topic: "Suvni tozalash", language: "o‘zbek",
+      llm: { provider: "openai", openaiKey: "mock-key", openaiModel: "mock-model" },
+    });
+    assert.equal(result.fallback, true);
+    assert.equal(result.image, null, "yiqilgan Graphviz renderidan rasm keshga uzatilmasin");
+    assert.ok(result.renderError);
+    assert.equal(result.item.nodes.length, 5, "xato ma’lumot reja asosida valid fallback bilan almashtirilsin");
+    assert.equal(requests, 2, "xato JSON ikki urinishdan so‘ng xavfsiz fallbackga o‘tsin");
+  } finally {
+    global.fetch = originalFetch;
+    if (originalPath == null) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+  }
+});
+
 test("parallel worker'lar berilgan concurrency chegarasidan oshmaydi va natija tartibini saqlaydi", async () => {
   let active = 0;
   let maximum = 0;
