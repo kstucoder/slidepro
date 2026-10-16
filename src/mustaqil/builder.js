@@ -12,6 +12,7 @@ const {
 } = require("docx");
 const { normalizeHeadingTitle } = require("./headings");
 const { renumberMedia } = require("./media-numbering");
+const { sortReferencesAPA, parseApaPartsForDisplay } = require("./references");
 
 const mm = (n) => Math.round(n * 56.692);
 
@@ -464,18 +465,27 @@ function buildChapterContent(chapter, pngCache, isFirst, mainNumber = 0) {
 // ─── ADABIYOTLAR RO'YXATI ──────────────────────────────────
 function buildReferences(refs = []) {
   const nodes = [
-    heading1("FOYDALANILGAN ADABIYOTLAR RO'YXATI", { pageBreakBefore: true }),
-    ...emptyLine(1),
+    new Paragraph({
+      children: [new TextRun({ text: "Foydalanilgan adabiyotlar", font: FONT, size: 24, bold: true, color: BLACK })],
+      pageBreakBefore: true,
+      spacing: { line: 480, lineRule: "auto", before: 0, after: 0 },
+      alignment: AlignmentType.CENTER,
+      indent: undefined,
+    }),
   ];
-  refs.forEach((ref, i) => {
+  sortReferencesAPA(refs).forEach((ref) => {
+    const parts = parseApaPartsForDisplay(ref);
+    const run = (text, italics = false) => new TextRun({ text: cleanInlineLatex(text), font: FONT, size: 24, italics, color: BLACK });
+    const children = parts
+      ? [run(`${parts.authorDate} `), ...(parts.kind === "journal"
+        ? [run(parts.title), run(". "), run(parts.journal, true), run(", "), run(parts.volume, true), ...(parts.issue ? [run(`(${parts.issue})`)] : []), run(parts.suffix)]
+        : [run(parts.title, true), run(`. ${parts.publication}`)])]
+      : [run(ref)];
     nodes.push(new Paragraph({
-      children: [
-        new TextRun({ text: `${i + 1}. `, font: FONT, size: FONT_SIZE, bold: true, color: BLACK }),
-        new TextRun({ text: cleanInlineLatex(ref), font: FONT, size: FONT_SIZE, color: BLACK }),
-      ],
-      alignment: AlignmentType.JUSTIFIED,
-      spacing: { ...LINE_SPACING, before: mm(1) },
-      indent: { left: mm(10), hanging: mm(10) },
+      children,
+      alignment: AlignmentType.LEFT,
+      spacing: { line: 480, lineRule: "auto", before: 0, after: 0 },
+      indent: { left: mm(12.7), hanging: mm(12.7) },
     }));
   });
   return nodes;

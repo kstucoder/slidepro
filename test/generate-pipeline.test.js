@@ -14,9 +14,28 @@ const {
   retryDeficientTextSlots,
 } = require("../src/mustaqil/generate");
 
-const references = Array.from({ length: 8 }, (_, index) => `Muallif ${index + 1}. (2024). Tekshirilgan sinov manbasi ${index + 1}. Nashriyot.`);
+const references = [
+  "Karimov, A. (2020). O‘zbekiston ta’lim tizimi va rivojlanish asoslari. Fan va texnologiya.",
+  "Ivanov, I. I. (2019). Основы автоматического управления. Наука.",
+  "Smith, J. (2021). The fundamentals of control systems. Academic Press.",
+  "Rahimov, B. (2018). O‘zbek adabiyoti tarixi va nazariyasi. Sharq.",
+  "Petrov, P. P. (2022). Исследование систем управления. Издательство МГУ.",
+  "Brown, R. (2020). Research methods in engineering. Springer.",
+  "Usmonov, D. (2023). O‘quv jarayonini boshqarish va tahlil. Universitet nashriyoti.",
+  "Sidorov, S. S. (2021). Современные методы анализа данных. Научное издательство.",
+];
+const incompleteReferences = [
+  "Taylor, A. (2020). The control systems study 1. Test Press.",
+  "Taylor, A. (2021). The control systems study 2. Test Press.",
+  "Taylor, A. (2022). The control systems study 3. Test Press.",
+  "Taylor, A. (2023). The control systems study 4. Test Press.",
+  "Taylor, A. (2024). The control systems study 5. Test Press.",
+  "Taylor, A. (2019). The control systems study 6. Test Press.",
+  "Taylor, A. (2018). The control systems study 7. Test Press.",
+  "Taylor 2017. The control systems study 8.",
+];
 
-function fakeOutline() {
+function fakeOutline(outlineReferences = incompleteReferences) {
   return {
     meta: { title: "Pipeline sinovi" },
     chapters: [
@@ -43,7 +62,7 @@ function fakeOutline() {
       { id: "ch4", title: "Tizim samaradorligi", role: "analysis", sections: [{ title: "Samaradorlik tahlili" }] },
       { id: "conclusion", title: "Xulosa", role: "conclusion" },
     ],
-    references,
+    references: outlineReferences,
   };
 }
 
@@ -116,7 +135,8 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
       const userPrompt = body.messages.find(message => message.role === "user")?.content || "";
       requests.push(userPrompt);
       let payload;
-      if (userPrompt.includes("Akademik mustaqil ish uchun tuzilma")) payload = fakeOutline();
+      if (userPrompt.includes("BIBLIOGRAFIYANI TUZATISH")) payload = { references };
+      else if (userPrompt.includes("Akademik mustaqil ish uchun tuzilma")) payload = fakeOutline(references.slice(0, 7));
       else if (userPrompt.includes("MEDIA AJRATISH QOIDASI")) payload = proseResponse(userPrompt);
       else if (userPrompt.includes("Slot ID:")) payload = mediaResponse(userPrompt, mediaAttempts);
       else throw new Error(`Kutilmagan LLM prompt: ${userPrompt.slice(0, 100)}`);
@@ -151,7 +171,26 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
     assert.equal((documentXml.match(/<w:drawing>/g) || []).length, 6);
     assert.match(documentXml, /1-formula\. Tizim modeli/);
     assert.match(documentXml, /2-formula\. O(?:&apos;|')tkinchi javob/);
+    const bibliographyStart = documentXml.lastIndexOf("Foydalanilgan adabiyotlar");
+    assert.notEqual(bibliographyStart, -1, "bibliografiya bo'limi DOCX ichida mavjud");
+    const bibliographyXml = documentXml.slice(bibliographyStart);
+    assert.equal((bibliographyXml.match(/<w:p(?:\s|>)/g) || []).length, 12, "yakuniy bibliografiya aynan 12 ta yozuvdan iborat");
+    assert.doesNotMatch(bibliographyXml, /AI-generated|verify before citation|synthetic|fallback/i, "yakuniy bibliografiyada sintetik yoki fallback belgisi bo'lmaydi");
+    assert.ok(bibliographyXml.indexOf("Brown, R.") < bibliographyXml.indexOf("Ivanov, I. I."), "APA manbalari muallif bo'yicha saralanadi");
+    assert.match(bibliographyXml, /O‘zbekiston ta’lim tizimi/);
+    assert.match(bibliographyXml, /Основы автоматического управления/);
+    assert.match(bibliographyXml, /fundamentals of control systems/i, "yakuniy ro'yxatda ingliz tilidagi asl manba ham bor");
+    assert.doesNotMatch(bibliographyXml, /<w:numPr>/, "APA adabiyotlar yozuvlari raqamlanmaydi");
+    assert.match(bibliographyXml, /<w:i\s*\/>/, "kitob nomi yoki jurnal nomi APA bo'yicha kursiv qilinadi");
     assert.equal(maxRequests, 3, "barcha parallel LLM so'rovlari concurrency=3 chegarasida qoladi");
+    assert.equal(requests.filter(prompt => prompt.includes("Akademik mustaqil ish uchun tuzilma")).length, 1, "bibliografiya sifati outline generatsiyasini qayta boshlatmaydi");
+    const bibliographyRetries = requests.filter(prompt => prompt.includes("BIBLIOGRAFIYANI TUZATISH"));
+    assert.equal(bibliographyRetries.length, 1, "til qamrovi/APA muammosi uchun faqat bitta alohida bibliografiya retry bo'ladi");
+    assert.match(bibliographyRetries[0], /references maydonini qaytar/);
+    assert.match(bibliographyRetries[0], /AYNAN 12 ta yozuv/);
+    assert.match(bibliographyRetries[0], /Hech qanday AI, sintetik, tekshirish yoki boshqa belgi\/yorliq\/izoh qo'shma/);
+    assert.doesNotMatch(bibliographyRetries[0], /AI-generated|verify before citation|AI-illustrativ/i);
+    assert.doesNotMatch(bibliographyRetries[0], /Nazariy asoslar|Amaliy tahlil/, "retry boblar mazmunini qayta yaratishni so'ramaydi");
     assert.equal(requests.filter(prompt => prompt.includes("MEDIA AJRATISH QOIDASI")).length, 6, "6 ta bobning prose so'rovlari media payloadini generatsiya qilmaydi");
     const slotRequests = requests.filter(prompt => prompt.includes("Slot ID:"));
     assert.equal(slotRequests.length, 7, "6 ta media sloti va faqat bitta yaroqsiz formula slotiga qo'shimcha urinish bo'ladi");

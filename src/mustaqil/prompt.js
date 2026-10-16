@@ -293,7 +293,7 @@ function normalizeOutlineForPages(outline, { pages, topic, language, studentName
     total_words_target: plan.totalWords,
     chapters: [intro, ...normalizedMain, conclusion],
     references: Array.isArray(safeOutline.references)
-      ? safeOutline.references.filter(reference => typeof reference === "string" && reference.trim()).map(reference => reference.trim()).slice(0, 8)
+      ? safeOutline.references.filter(reference => typeof reference === "string" && reference.trim()).map(reference => reference.trim()).slice(0, 12)
       : [],
   };
 }
@@ -469,13 +469,14 @@ GRAFIKLAR (butun ish bo'yicha ${chartQuotaText} ta; har asosiy bo'limda 0 yoki 1
 
 JADVALLAR: butun ish bo'yicha ko'pi bilan 1 ta, ixtiyoriy asosiy bo'lim uchun
 
-ADABIYOTLAR (references): 8 ta, APA 7 formatida, qisqa va bir sahifaga sig'adigan qilib. FAQAT HAQIQIY, MAVJUD ASARLAR:
-- Kitob: Muallif, A. A. (yil). Asar nomi. Nashriyot.
-- Jurnal: Muallif, A. A. (yil). Maqola nomi. Jurnal nomi, jild(son), sahifalar.
-- O'zbekcha/xorijiy manbalar nisbatini faqat haqiqiy, bibliografik ma'lumoti aniq asarlar topilsa saqla; ulushni to'ldirish uchun hech qachon muallif, asar, yil yoki nashriyot uydirma.
-- Noaniq umumiy yozuvlar (masalan, "oliy ta'lim uchun darslik, 2021–2024") manba hisoblanmaydi; har bir yozuvda aniqlanadigan muallif, yil, nom va nashriyot bo'lsin.
-- Agar TEKSHIRILGAN MANBALAR ro'yxati berilgan bo'lsa, aynan o'sha manbalarni ishlat; tekshirilgan ro'yxatni boshqa asarlar bilan almashtirma.
-- Mavjudligiga 100% ishonch hosil qilingan manbalar
+ADABIYOTLAR (references): AYNAN 12 ta yozuv, APA 7 formatida va to'liq bibliografik maydonlari bilan:
+- 12 ta yozuv ichida asl nashr tili o'zbek, rus va ingliz bo'lgan kamida bittadan manba bo'lsin. Tilni faqat manbaning ASL TILDAGI SARLAVHASI bo'yicha hisobla; tarjima asarlar, tarjima sarlavhalari, izohlar yoki "o'zbekcha/ruscha/inglizcha" yorliqlari til qamrovi hisoblanmaydi.
+- Sarlavha va nashr ma'lumotlarini asl yozuvi va asl tilida saqla; o'zbek manbasi o'zbekcha, rus manbasi ruscha, ingliz manbasi inglizcha bo'lsin. Tarjima qilingan nom bilan asl til manbasi sifatida ko'rsatma.
+- Kitob/hisobot: Muallif yoki tashkilot. (yil). Asar nomi. Nashriyot.
+- Jurnal maqolasi: Muallif, A. A. (yil). Maqola nomi. Jurnal nomi, jild(son), sahifalar yoki maqola raqami. DOI/URL.
+- Haqiqiy va mavzuga mos manbalarni topa olmasang, yetishmayotgan o'rinlarni mavzuga mos, mantiqan realistik APA yozuvlari bilan to'ldir. Bibliografiya yozuvlariga AI, sintetik, tekshirish yoki boshqa belgi, yorliq yoxud izoh qo'shma; soxta DOI/URL yoki tekshirilmagan jild, son, sahifa ham qo'shma.
+- Foydalanuvchi bergan tekshirilgan manbalarning metadata'sini o'zgartirma; ular 12 taga yoki uch til qamroviga yetmasa, qolgan o'rinlarni yuqoridagi standart APA yozuvlari bilan to'ldir.
+- Noaniq umumiy yozuvlarni haqiqiy manba sifatida ko'rsatma. Har bir yozuv APA 7 muallif, yil, sarlavha va nashriyot/jurnal maydonlari tartibida bo'lsin.
 
 Faqat JSON qaytar`;
 }

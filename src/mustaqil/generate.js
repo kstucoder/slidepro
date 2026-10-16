@@ -32,6 +32,12 @@ const { normalizeFormulaSource } = require("./formula-data");
 const { formulaKey } = require("./media-validation");
 const { buildMediaSlots, groupMediaSlotsByChapter, mergeMediaSlotsIntoContent } = require("./media-slots");
 const { postJsonWithRetry } = require("./llm-http");
+const {
+  validateBibliography,
+  selectBestReferences,
+  completeBibliography,
+  buildBibliographyRepairPrompt,
+} = require("./references");
 
 const DEFAULT_LLM_CONCURRENCY = 3;
 const SLOT_RETRY_LIMIT = 2;
@@ -794,16 +800,13 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   const isIntro = (c) => c && (c.id === "intro" || c.role === "introduction" || /^kirish$/i.test(String(c.title || "").trim()));
   const isConclusion = (c) => c && (c.id === "conclusion" || c.role === "conclusion" || /^xulosa$/i.test(String(c.title || "").trim()));
   const isReferences = (c) => c && (/reference|bibliography/i.test(`${c.id || ""} ${c.role || ""}`) || /^(foydalanilgan adabiyotlar(?: ro'yxati)?|adabiyotlar(?: ro'yxati)?|references|bibliography)$/i.test(String(c.title || "").trim()));
-  const referenceCount = (candidate) => Array.isArray(candidate?.references)
-    ? candidate.references.filter(reference => typeof reference === "string" && reference.trim()).length
-    : 0;
   const matchesExpectedStructure = (candidate) => {
     const candidateChapters = Array.isArray(candidate?.chapters) ? candidate.chapters : [];
     const hasIntro = candidateChapters.some(isIntro);
     const hasConclusion = candidateChapters.some(isConclusion);
     const mainChapters = candidateChapters.filter(c => !isIntro(c) && !isConclusion(c) && !isReferences(c));
     const subsectionCount = mainChapters.reduce((sum, c) => sum + (Array.isArray(c.sections) ? c.sections.length : 0), 0);
-    return hasIntro && hasConclusion && mainChapters.length === expectedPlan.mainChapterCount && subsectionCount === expectedPlan.subsectionCount && referenceCount(candidate) >= 8;
+    return hasIntro && hasConclusion && mainChapters.length === expectedPlan.mainChapterCount && subsectionCount === expectedPlan.subsectionCount;
   };
   if (!matchesExpectedStructure(outline)) {
     console.log("[mustaqil] outline tuzilmasi talabga mos emas, qayta so'ralmoqda...");
@@ -816,15 +819,42 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
       if (retry.meta) retry.meta.year = String(new Date().getFullYear());
       outline = retry;
       console.log("[mustaqil] outline qayta olindi вњ…");
-    } else if (referenceCount(retry) >= 8) {
-      outline = retry;
-      console.warn("[mustaqil] tuzilma fallback bilan normallashtiriladi; manbalar yetarli");
     } else {
-      console.warn("[mustaqil] ikkinchi urinishda ham tuzilma noto'g'ri вЂ” mavjud bilan davom");
+      console.warn("[mustaqil] ikkinchi urinishda ham bob tuzilmasi noto'g'ri — mavjud outline bilan davom");
     }
   }
-  if (referenceCount(outline) < 8) {
-    throw new Error(`Ish uchun kamida 8 ta bo'sh bo'lmagan adabiyot manbasi olinmadi (${referenceCount(outline)}/8). Qayta urinib ko'ring.`);
+
+  const generatedReferences = Array.isArray(outline.references) ? outline.references : [];
+  outline.references = selectBestReferences(generatedReferences);
+  let bibliographyCheck = validateBibliography(outline.references);
+  if (!bibliographyCheck.valid) {
+    console.warn("[mustaqil] bibliografiyada til qamrovi yoki APA 7 maydonlari yetishmaydi; faqat manbalar qayta so'ralmoqda:", bibliographyCheck.problems.join("; "));
+    try {
+      const repaired = parseOutline(await callLLM({
+        system: outlineSystemPrompt(),
+        user: buildBibliographyRepairPrompt({ topic, language: lang, references: generatedReferences, validation: bibliographyCheck, sourceContent }),
+        llm,
+        maxTokens: 3500,
+      }));
+      const repairedReferences = Array.isArray(repaired.references) ? repaired.references : [];
+      const repairedCheck = validateBibliography(repairedReferences);
+      if (repairedCheck.valid) {
+        outline.references = selectBestReferences(repairedReferences);
+        console.log("[mustaqil] bibliografiya APA 7 va uch til qamrovi bo'yicha tuzatildi");
+      } else {
+        outline.references = selectBestReferences(generatedReferences, repairedReferences);
+        console.warn("[mustaqil] bibliografiya retry to'liq talabga yetmadi; eng yaxshi manbalar bilan hujjat davom etadi:", repairedCheck.problems.join("; "));
+      }
+    } catch (error) {
+      outline.references = selectBestReferences(generatedReferences);
+      console.warn("[mustaqil] bibliografiya retry bajarilmadi; mavjud manbalar bilan hujjat davom etadi:", error.message);
+    }
+    bibliographyCheck = validateBibliography(outline.references);
+  }
+  outline.references = completeBibliography(outline.references, { topic });
+  bibliographyCheck = validateBibliography(outline.references);
+  if (!bibliographyCheck.valid) {
+    console.warn("[mustaqil] ogohlantirish: yakuniy bibliografiya baribir APA 7/uch til talablarining barchasini qanoatlantirmaydi; DOCX generatsiyasi to'xtatilmaydi:", bibliographyCheck.problems.join("; "));
   }
 
   // Bir nechta intro/conclusion bo'lsa, ortiqchasini olib tashlash
