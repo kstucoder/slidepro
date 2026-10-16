@@ -1,6 +1,5 @@
 const { normalizeFlowchartData } = require("./flowchart-data");
 const { isUzbek } = require("./flowchart-data");
-const { requiredUzbekTranslations, captionContainsUzbekEquivalent } = require("./flowchart-data");
 const { MIN_DIAGRAM_COUNT } = require("./media-requirements");
 
 function formulaKey(value) {
@@ -83,13 +82,6 @@ function validatePlannedMedia(generatedChapters, plannedChapters, { language, mi
         errors.push(`${chapterName}: flowchart ${flowchartIndex + 1} caption bo'sh`);
       } else if (captionWordCount < 6 || (isUzbek(language) && !/\bizoh\s*:/i.test(caption))) {
         errors.push(`${chapterName}: flowchart ${flowchartIndex + 1} captionda qisqa izoh bo'lishi kerak`);
-      }
-      if (isUzbek(language)) {
-        for (const { english, uzbek } of requiredUzbekTranslations(flowchart)) {
-          if (!captionContainsUzbekEquivalent(caption, uzbek)) {
-            errors.push(`${chapterName}: flowchart ${flowchartIndex + 1} captionda "${english}" atamasining o'zbekcha muqobili "${uzbek}" yo'q`);
-          }
-        }
       }
     });
     actualCharts.forEach((chart, chartIndex) => {

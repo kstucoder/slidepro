@@ -102,13 +102,26 @@ function capBlockGroup(blocks, wordLimit) {
   }).filter(block => block?.type !== "paragraph" || String(block.text || "").trim());
 }
 
-function clampChapterContent(chapter, content, mainNumber) {
-  const normalized = normalizeChapterContent(chapter, content, mainNumber);
-  const chapterLimit = Number(chapter?.word_target) || 265;
-  if (chapter?.id === "intro" || chapter?.id === "conclusion") return capBlockGroup(normalized, chapterLimit);
-
+function clampChapterContent(chapter, content, mainNumber, maxWordRatio = 1) {
   const sections = Array.isArray(chapter?.sections) ? chapter.sections : [];
-  if (!sections.length) return capBlockGroup(normalized, chapterLimit);
+  const source = Array.isArray(content) ? content : [];
+  const headings = source.filter(item => item?.type === "heading" && item.level === 2);
+  const preserveSectionGroups = sections.length > 0 && headings.length === sections.length;
+  const normalized = preserveSectionGroups
+    ? source.map(item => {
+      if (item?.type !== "heading" || item.level !== 2) return item;
+      const sectionIndex = headings.indexOf(item);
+      const title = normalizeHeadingTitle(sections[sectionIndex]?.title || `Bo'lim ${sectionIndex + 1}`, { stripNumbering: true });
+      return { ...item, text: `${mainNumber}.${sectionIndex + 1}. ${title}` };
+    })
+    : normalizeChapterContent(chapter, source, mainNumber);
+  const requestedRatio = Number(maxWordRatio);
+  const wordRatio = Number.isFinite(requestedRatio) && requestedRatio >= 1 ? requestedRatio : 1;
+  const boundedLimit = target => Math.floor((Number(target) || 0) * wordRatio + 1e-9);
+  const chapterLimit = Number(chapter?.word_target) || 265;
+  if (chapter?.id === "intro" || chapter?.id === "conclusion") return capBlockGroup(normalized, boundedLimit(chapterLimit));
+
+  if (!sections.length) return capBlockGroup(normalized, boundedLimit(chapterLimit));
   const result = [];
   let group = [];
   let sectionIndex = -1;
@@ -116,7 +129,7 @@ function clampChapterContent(chapter, content, mainNumber) {
     if (!group.length) return;
     const heading = group[0];
     const limit = Number(sections[sectionIndex]?.word_target) || 398;
-    result.push(heading, ...capBlockGroup(group.slice(1), limit));
+    result.push(heading, ...capBlockGroup(group.slice(1), boundedLimit(limit)));
     group = [];
   };
 

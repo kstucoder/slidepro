@@ -3,9 +3,10 @@ const assert = require("node:assert/strict");
 const JSZip = require("jszip");
 const sharp = require("sharp");
 const { renderFormula } = require("../src/mustaqil/formula");
-const { renderChart } = require("../src/mustaqil/chart");
+const { renderChart, wrapLabelLines, barSVG, lineSVG } = require("../src/mustaqil/chart");
 const { renderFlowchart } = require("../src/mustaqil/flowchart");
 const { buildDocument } = require("../src/mustaqil/builder");
+const { prerenderMedia } = require("../src/mustaqil/generate");
 
 test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", async () => {
   const imageCache = new Map();
@@ -155,5 +156,59 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
   assert.match(documentXml, /\(1-formula\. Sinov formulasi\)/);
   assert.match(documentXml, /\(2-formula\. Ikkinchi formula\)/);
   assert.match(documentXml, /1-jadval\. Sinov jadvali/);
+  assert.match(documentXml, /1-jadval\. Sinov jadvali.*Sintetik ma(?:'|&apos;)lumot; real o(?:'|&apos;)lchov emas/,
+    "sintetik jadvalning yakuniy DOCX captionida real o'lchov emasligi aniq yozilsin");
   assert.doesNotMatch(documentXml, /N-(?:rasm|formula|jadval)/i);
+});
+
+test("uzun chart X-o'qi yorliqlari satrlarga o'raladi va to'liq matnni saqlaydi", async () => {
+  const longLabel = "Northern regional manufacturing throughput efficiency index by quarter and projected baseline";
+  assert.equal(wrapLabelLines(longLabel, 18).join(" "), longLabel);
+  assert.equal(wrapLabelLines("supercalifragilisticexpialidocious", 8).join(""), "supercalifragilisticexpialidocious",
+    "bo'shliqsiz uzun token ham kesilmasin");
+
+  const labels = [longLabel, "Current system response"];
+  const barSvg = barSVG({ labels, values: [12, 16], title: "Bar labels" });
+  const lineSvg = lineSVG({ labels: [longLabel, "Middle response", "Final output"], values: [12, 16, 18], title: "Line labels" });
+  assert.match(barSvg, /<tspan/);
+  assert.match(lineSvg, /<tspan/);
+  for (const word of longLabel.split(/\s+/)) {
+    assert.ok(barSvg.includes(word), `bar SVG yo'riq yorlig'idagi ${word} so'zini saqlasin`);
+    assert.ok(lineSvg.includes(word), `line SVG yo'riq yorlig'idagi ${word} so'zini saqlasin`);
+  }
+  assert.ok(Number(barSvg.match(/height="(\d+)"/)?.[1]) > 360, "bar chart balandligi qo'shimcha yorliq satrlariga mos kengaysin");
+  assert.ok(Number(lineSvg.match(/height="(\d+)"/)?.[1]) > 320, "line chart balandligi qo'shimcha yorliq satrlariga mos kengaysin");
+  const veryLongLabel = Array(4).fill(longLabel).join(" ");
+  const image = await renderChart({ chartType: "line", labels: [veryLongLabel, "Current response"], values: [12, 16], title: "Uzoq yorliqlar" });
+  assert.ok(image.height > Math.round(440 * 320 / 600), "PNG renderi o'ralgan yorliqlar uchun vertikal joy ajratsin");
+});
+
+test("media renderi xato bo'lsa ham DOCX matnli fallback bilan tayyorlanadi", async () => {
+  const chapter = {
+    id: "ch1",
+    title: "Media fallback sinovi",
+    level: 1,
+    content: [
+      { type: "chart", number: 1, title: "Fallback grafik", caption: "Grafik captioni", chartType: "invalid", labels: ["A", "B"], values: [1, 2], data_source: "Sintetik illustrativ ma'lumot; real o'lchov emas" },
+      { type: "flowchart", number: 2, title: "Fallback oqim sxemasi", caption: "Izoh: jarayonning asosiy bosqichlari ketma-ket ko'rsatilgan.", nodes: [], edges: [] },
+    ],
+  };
+  const cache = await prerenderMedia([chapter]);
+  assert.equal(cache.size, 0, "ikkala media rasmi render xatosi sabab keshga kirmasligi kerak");
+
+  const docx = await buildDocument({
+    meta: { title: "Media fallback sinovi", student_name: "", student_group: "", supervisor: "" },
+    chapters: [
+      { id: "intro", title: "Kirish", content: [{ type: "paragraph", text: "Kirish matni." }] },
+      chapter,
+      { id: "conclusion", title: "Xulosa", content: [] },
+    ],
+    references: ["Sinov manbasi"],
+  }, cache);
+  assert.equal(docx.subarray(0, 2).toString("ascii"), "PK");
+  const zip = await JSZip.loadAsync(docx);
+  const documentXml = await zip.file("word/document.xml").async("string");
+  assert.match(documentXml, /Fallback grafik/);
+  assert.match(documentXml, /Sintetik illustrativ ma(?:'|&apos;)lumot/);
+  assert.match(documentXml, /Fallback oqim sxemasi/);
 });

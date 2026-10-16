@@ -26,7 +26,12 @@ const UZBEK_TRANSLATIONS = [
   ["response", "javob"],
   ["closed-loop control system", "yopiq konturli boshqaruv tizimi"],
   ["feedback control system", "teskari aloqali boshqaruv tizimi"],
+  ["integrated pest management", "zararkunandalarga qarshi integratsiyalashgan kurash"],
+  ["IPM", "zararkunandalarga qarshi integratsiyalashgan kurash"],
+  ["risk", "xavf"],
   ["control signal", "boshqaruv signali"],
+  ["set point qiymatini", "topshiriq qiymatini"],
+  ["setpoint qiymatini", "topshiriq qiymatini"],
   ["set point", "topshiriq qiymati"],
   ["setpoint", "topshiriq qiymati"],
   ["measurement", "o'lchov"],
@@ -89,14 +94,25 @@ const UZBEK_TRANSLATIONS = [
   ["closed", "yopiq"],
   ["wait", "kutish"],
   ["error", "xatolik"],
+  ["monitoring", "kuzatish"],
+  ["fallback", "zaxira variant"],
+  ["pid", "proporsional-integral-differensial rostlagich"],
 ];
 const UZBEK_ENGLISH_WORDS = [...new Set(UZBEK_TRANSLATIONS.map(([word]) => word.split(/\s+/)).flat())].filter(word => word !== "signal");
+const UZBEK_COMMON_WORDS = new Set(`o'zbek mavzu asosiy jarayon jarayonlari bosqich bosqichlari suv suvni tozalash tizim tizimi avtomatik boshqaruv natija natijasi qaror qarorlar ketma ketlik ko'rsatish o'lchash ma'lumot ma'lumotni ma'lumotlar qabul amal amalni bajarish keyingi mezon mezonga mosmi yakunlash boshlash tushuntirish tahlil model modeli samara samaradorlik sifat sifatini maqbulmi nazorat oqim oqimi xom manbai ichimlik filtrlash iste'molchi algoritmi rostlagich qurilma qiymat qiymati chiqishi kirish natijani shart belgilangan ifodalash usul usullari qism qismi taqqoslash tezlik tezligi xatolik xatolikni bo'lim yo'nalish ishlash qo'llash baholash natijaga amaliy nazariy ko'rsatkich ko'rsatkichlar`.split(/\s+/));
+const UZBEK_EXTRA_WORDS = new Set(`sinov mavzusi yopiq yakun yakuniy nazorati adabiyot adabiyoti qiyosiy she'riyat obrazlar qiymatini o'tkazuvchanlik kontur tarakan`.split(/\s+/));
+const UZBEK_SUFFIX = /(?:laridan|larining|larimiz|laringiz|lashtirish|lanish|lar|lari|ning|dagi|dan|ga|ka|qa|ni|mi|si|sini|imiz|ingiz|ligi|lik|chi|ish|lash|masi|moqda|ayotgan|uv|i)$/i;
 
 function isUzbek(language) {
   return /^(?:uz\b|uzbek\b|o['’]zbek\b)/i.test(String(language || "").trim());
 }
 function isRussian(language) {
   return /^(?:ru\b|rus\b|рус)/i.test(String(language || "").trim());
+}
+
+function isLikelyUzbekWord(value) {
+  const word = String(value || "").toLocaleLowerCase().replace(/[’`]/g, "'");
+  return word.includes("'") || UZBEK_COMMON_WORDS.has(word) || UZBEK_EXTRA_WORDS.has(word) || UZBEK_SUFFIX.test(word);
 }
 
 function localizeUzbekText(value, language) {
@@ -106,8 +122,6 @@ function localizeUzbekText(value, language) {
     const escaped = english.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     text = text.replace(new RegExp(`\\b${escaped}\\b`, "gi"), uzbek);
   }
-  const remaining = UZBEK_ENGLISH_WORDS.find(word => new RegExp(`\\b${word}\\b`, "i").test(text));
-  if (remaining) throw new Error(`flowchart: yorliqda inglizcha atama qoldi (${remaining})`);
   return text;
 }
 
@@ -124,20 +138,42 @@ function requiredUzbekTranslations(flowchart) {
       const escaped = english.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       if (new RegExp(`\\b${escaped}\\b`, "i").test(source)) matches.set(english.toLocaleLowerCase(), { english, uzbek });
     }
+    const tokens = String(source).match(/[A-Za-z][A-Za-z’'-]{2,}/g) || [];
+    for (const token of tokens) {
+      const normalized = token.toLocaleLowerCase().replace(/[’`]/g, "'");
+      const acronym = /^[A-Z]{2,}$/.test(token);
+      if (UZBEK_ENGLISH_WORDS.includes(normalized) || (!acronym && isLikelyUzbekWord(normalized))) continue;
+      if (!matches.has(normalized)) matches.set(normalized, { english: token, uzbek: null });
+    }
   }
   return [...matches.values()];
+}
+
+function providedCaptionTranslation(caption, english) {
+  const normalize = value => String(value || "").toLocaleLowerCase().replace(/[’‘`]/g, "'").replace(/[^\p{L}\p{N}']+/gu, " ").trim();
+  const wanted = normalize(english);
+  for (const segment of String(caption || "").split(/[;\n]+/)) {
+    const match = segment.trim().match(/^(?:Atamalar:\s*)?(.+?)\s*[—–-]\s*(.+?)\s*\.?$/i);
+    if (!match || normalize(match[1]) !== wanted) continue;
+    if (normalize(match[2]) && normalize(match[2]) !== wanted) return match[2].trim();
+  }
+  return "";
 }
 
 function buildFlowchartCaption(flowchart, purpose = "", language = "o'zbek") {
   const title = String(flowchart?.title || "Oqim sxemasi").trim();
   const description = String(purpose || "jarayon bosqichlari va qarorlar ketma-ketligini ko'rsatadi").trim();
   if (isUzbek(language)) {
-    const terms = requiredUzbekTranslations(flowchart)
-      .map(({ english, uzbek }) => `${english} — ${uzbek}`);
-    const localizedTitle = localizeUzbekText(title, language);
-    const localizedDescription = localizeUzbekText(description, language);
-    const glossary = terms.length ? `Atamalar: ${terms.join("; ")}. ` : "";
-    return `${glossary}Izoh: ${localizedTitle} sxemada ${localizedDescription}.`;
+    let conciseDescription = localizeUzbekText(description, language)
+      .replace(/\s+/g, " ")
+      .replace(/[.!?]+$/g, "");
+    if (conciseDescription.split(/\s+/).filter(Boolean).length < 5) {
+      conciseDescription = `${conciseDescription} va asosiy jarayon bosqichlarini ko'rsatadi`;
+    }
+    if (conciseDescription.length > 220) {
+      conciseDescription = `${conciseDescription.slice(0, 217).replace(/\s+\S*$/, "")}…`;
+    }
+    return `Izoh: ${conciseDescription}.`;
   }
   if (isRussian(language)) return `${title}. Пояснение: ${description}.`;
   return `${title}. Explanation: ${description}.`;
@@ -220,6 +256,8 @@ module.exports = {
   isRussian,
   localizeUzbekText,
   requiredUzbekTranslations,
+  providedCaptionTranslation,
   buildFlowchartCaption,
   captionContainsUzbekEquivalent,
+  isLikelyUzbekWord,
 };

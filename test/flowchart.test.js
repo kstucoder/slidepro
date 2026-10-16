@@ -5,7 +5,8 @@ const { buildFlowchartCaption } = require("../src/mustaqil/flowchart-data");
 const { buildFlowchartDot } = require("../src/mustaqil/flowchart");
 const { normalizeOutlineForPages, outlineUserPrompt, chapterUserPrompt } = require("../src/mustaqil/prompt");
 const { validatePlannedMedia } = require("../src/mustaqil/media-validation");
-const { alignPlannedFlowchartBlocks } = require("../src/mustaqil/generate");
+const { alignPlannedFlowchartBlocks, alignPlannedChartBlocks, mediaSlotPrompt } = require("../src/mustaqil/generate");
+const { normalizeChartData } = require("../src/mustaqil/chart-data");
 
 const validFlowchart = {
   type: "flowchart",
@@ -163,11 +164,16 @@ test("outline va bob promptlari Graphviz flowchartni JSON media sifatida so'rayd
     language: "o'zbek", chapterIndex: 0, totalChapters: 1,
   });
   assert.match(prompt, /Graphviz oqim sxemasi rejasi/);
-  assert.match(prompt, /inglizcha atamalar .* chizmada qolishi mumkin/);
-  assert.match(prompt, /har bir inglizcha atamaning o'zbekcha muqobilini/);
-  assert.match(prompt, /"Atamalar:/);
+  assert.match(prompt, /inglizcha yoki o'zbekcha atamalar chizmada qolishi mumkin/);
+  assert.match(prompt, /captionni o'zbekcha yozib, "Izoh:"/);
+  assert.match(prompt, /har bir labelni alohida tarjima qilish shart emas/);
   assert.match(prompt, /"type":"flowchart"/);
   assert.match(prompt, /DOT manbasini hech qachon JSON ichida yozma/);
+  const mediaPrompt = mediaSlotPrompt({ type: "flowchart", slot_id: "ch1:flowchart:1", plan: chapter.flowchart_plans[0] }, {
+    topic: "Suvni tozalash", language: "o'zbek",
+  });
+  assert.match(mediaPrompt, /inglizcha yoki o'zbekcha/);
+  assert.match(mediaPrompt, /har bir label uchun tarjima\/glossariy shart emas/);
 });
 
 test("rejalashtirilgan flowchartning yo‘qligi yoki yaroqsiz JSON’i renderdan oldin rad etiladi", () => {
@@ -204,7 +210,50 @@ test("yakuniy media tekshiruvi uchta diagrammadan kamini rad etadi va to'rtta di
   assert.equal(validatePlannedMedia(generatedFour, plannedFour), true);
 });
 
-test("Graphviz caption inglizcha yorliqlarning o'zbekcha muqobillari va qisqa izohni saqlaydi", () => {
+test("model diagrammalarni tashlab ketsa, reja asosida sintetik grafik va oqim sxemalari to'ldiriladi", () => {
+  const planned = {
+    id: "ch1",
+    title: "Nazariy asoslar va hisobiy yondashuv",
+    chart_count: 2,
+    chart_type: "bar",
+    chart_plans: [
+      { title: "Birinchi tahliliy ko'rsatkich" },
+      { title: "Ikkinchi tahliliy ko'rsatkich" },
+    ],
+    flowchart_count: 1,
+    flowchart_plans: [{ title: "Setpoint nazorati", purpose: "setpoint qiymatini tekshirish va jarayon qarorini tanlash" }],
+  };
+  let content = alignPlannedChartBlocks(planned, [{ type: "paragraph", text: "Nazariy tahlil." }]);
+  content = alignPlannedFlowchartBlocks(planned, content, "o'zbek");
+  const charts = content.filter(item => item.type === "chart");
+  const flowcharts = content.filter(item => item.type === "flowchart");
+
+  assert.equal(charts.length, 2);
+  charts.forEach(chart => {
+    assert.equal(normalizeChartData(chart).values.length, 5);
+    assert.match(chart.data_source, /sintetik illustrativ ma'lumot; real o'lchov emas/i);
+  });
+  assert.equal(flowcharts.length, 1);
+  assert.match(flowcharts[0].caption, /Izoh:.*topshiriq qiymati/i);
+  assert.equal(validatePlannedMedia([{ content }], [planned], { language: "o'zbek" }), true);
+});
+
+test("model captionida topshiriq qiymati bo'lmasa, mavjud flowchart captioni avtomatik qayta tuziladi", () => {
+  const chart = {
+    ...validFlowchart,
+    title: "Setpoint monitoring",
+    caption: "Izoh: setpoint monitoring jarayoni.",
+  };
+  const planned = {
+    id: "ch1", title: "Nazorat", flowchart_count: 1,
+    flowchart_plans: [{ title: chart.title, purpose: "setpoint qiymatini nazorat qilish bosqichlari" }],
+  };
+  const [aligned] = alignPlannedFlowchartBlocks(planned, [chart], "o'zbek");
+  assert.match(aligned.caption, /Izoh:.*topshiriq qiymati/i);
+  assert.equal(validatePlannedMedia([{ content: [aligned] }], [planned], { language: "o'zbek", minimumDiagramCount: 0 }), true);
+});
+
+test("Graphviz caption inglizcha yorliqlarni tarjimasiz qabul qilib, qisqa o'zbekcha izoh beradi", () => {
   const english = {
     ...validFlowchart,
     title: "Feedback control system",
@@ -219,16 +268,60 @@ test("Graphviz caption inglizcha yorliqlarning o'zbekcha muqobillari va qisqa iz
   english.caption = buildFlowchartCaption(english, "O'lchovga qarab boshqaruv qarorini yangilash jarayoni", "o'zbek");
   const planned = [{ id: "ch1", title: "Tizim", flowchart_count: 1, flowchart_plans: [{ title: english.title }] }];
   assert.equal(validatePlannedMedia([{ content: [english] }], planned, { language: "o'zbek", minimumDiagramCount: 0 }), true);
-  const missingTranslation = { ...english, caption: english.caption.replace(/datchik/gi, "") };
-  assert.throws(() => validatePlannedMedia([{ content: [missingTranslation] }], planned, { language: "o'zbek", minimumDiagramCount: 0 }), /captionda "sensor" atamasining o'zbekcha muqobili/);
+  assert.match(english.caption, /^Izoh:/);
+  const noGlossary = { ...english, caption: "Izoh: sxemada o'lchovga qarab boshqaruv qarorini yangilash bosqichlari ko'rsatiladi." };
+  assert.equal(validatePlannedMedia([{ content: [noGlossary] }], planned, { language: "o'zbek", minimumDiagramCount: 0 }), true);
 
   const withoutCaption = alignPlannedFlowchartBlocks({
     flowchart_plans: [{ title: english.title, purpose: "O'lchovga qarab boshqaruv qarorini yangilash jarayoni" }],
   }, [{ ...english, caption: "" }], "o'zbek");
-  assert.match(withoutCaption[0].caption, /sensor — datchik/);
   assert.match(withoutCaption[0].caption, /Izoh:/);
+  assert.match(withoutCaption[0].caption, /o'lchovga qarab boshqaruv qarorini/i);
+});
+
+test("lug'atda yo'q inglizcha Graphviz atamasi ham kodni to'xtatmaydi", () => {
+  const throughput = {
+    ...validFlowchart,
+    title: "Throughput API",
+    nodes: validFlowchart.nodes.map((node, index) => index === 1 ? { ...node, label: "Throughput API" } : node),
+    caption: "Izoh: o'tkazuvchanlik ko'rsatkichini baholash bosqichlari ko'rsatiladi.",
+  };
+  const caption = buildFlowchartCaption(throughput, "o'tkazuvchanlik ko'rsatkichini baholash bosqichlari", "o'zbek");
+  assert.match(caption, /^Izoh:.*o'tkazuvchanlik/i);
+  const aligned = alignPlannedFlowchartBlocks({
+    flowchart_count: 1,
+    flowchart_plans: [{ title: "Throughput", purpose: "O'tkazuvchanlik qiymatini baholash" }],
+  }, [{ ...throughput, caption }], "o'zbek")[0];
+  assert.match(aligned.title, /Throughput API/);
+  assert.match(aligned.nodes[1].label, /Throughput API/);
+  assert.match(buildFlowchartDot(aligned), /Throughput API/);
+  assert.match(aligned.caption, /Izoh:/);
+  assert.doesNotMatch(aligned.caption, /Atamalar:/);
+  assert.equal(validatePlannedMedia([{ content: [aligned] }], [{
+    id: "ch1", title: "Tahlil", flowchart_count: 1,
+    flowchart_plans: [{ title: "Throughput API" }],
+  }], { language: "o'zbek", minimumDiagramCount: 0 }), true);
 });
 
 test("ruscha flowchart fallback captionida ruscha izoh belgisi ishlatiladi", () => {
   assert.equal(buildFlowchartCaption({ title: "Схема" }, "Порядок обработки", "rus"), "Схема. Пояснение: Порядок обработки.");
+});
+
+test("tarakan nazorati fallbackida o‘zbekcha Tarakan, Risk va IPM terminlari ishlaydi", () => {
+  const planned = {
+    id: "ch1",
+    title: "Tarakanlarni yo‘qotish",
+    flowchart_count: 1,
+    flowchart_plans: [{
+      title: "Tarakanlarni yo‘qotish: IPM va Risk baholash",
+      purpose: "zararkunandalarga qarshi usullarni baholash",
+    }],
+  };
+  const [fallback] = alignPlannedFlowchartBlocks(planned, [], "o'zbek");
+  assert.match(fallback.caption, /^Izoh:/);
+  assert.match(fallback.caption, /zararkunandalarga qarshi usullarni baholash/i);
+  assert.doesNotMatch(fallback.caption, /Atamalar:/);
+  assert.equal(validatePlannedMedia([{ content: [fallback] }], [planned], {
+    language: "o'zbek", minimumDiagramCount: 0,
+  }), true);
 });

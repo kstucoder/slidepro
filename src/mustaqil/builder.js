@@ -10,6 +10,8 @@ const {
   WidthType, BorderStyle, TableLayoutType, VerticalAlign,
   NumberFormat, SectionType, UnderlineType,
 } = require("docx");
+const { normalizeHeadingTitle } = require("./headings");
+const { renumberMedia } = require("./media-numbering");
 
 const mm = (n) => Math.round(n * 56.692);
 
@@ -99,9 +101,9 @@ function latexToUnicode(s) {
   return t.replace(/\s+/g," ").trim();
 }
 
-// "1-bob." kabi prefikslarni olib tashlash
+// LLM kiritgan "1-bob", "Bob 1", "2-bo'lim" kabi strukturaviy yorliqlarni olib tashlash.
 function stripBob(title) {
-  return String(title || "").replace(/^\d+[\s-]*bob[\s.]*[-.\s]*/i, "").trim();
+  return normalizeHeadingTitle(title);
 }
 
 // ─── paragraph helpers ─────────────────────────────────────
@@ -147,9 +149,10 @@ function pageBreakPara() {
   return new Paragraph({ children: [new PageBreak()], spacing: { line: 240 } });
 }
 
-function heading1(text) {
+function heading1(text, opts = {}) {
   return new Paragraph({
     children: [new TextRun({ text: stripBob(text).toUpperCase(), font: FONT, size: FONT_SIZE, bold: true, color: BLACK })],
+    pageBreakBefore: opts.pageBreakBefore || undefined,
     spacing: { ...LINE_SPACING, before: mm(4), after: mm(2) },
     alignment: AlignmentType.CENTER,
     indent: undefined,
@@ -169,9 +172,18 @@ function captionPara(text) {
   return new Paragraph({
     children: [new TextRun({ text, font: FONT, size: SMALL_SIZE, italics: true, color: BLACK })],
     spacing: { line: 240, before: mm(1), after: mm(2) },
+    keepLines: true,
     alignment: AlignmentType.CENTER,
     indent: undefined,
   });
+}
+
+function numberedMediaCaption(number, type, ...values) {
+  const prefix = new RegExp(`^\\s*(?:n|\\d+)\\s*[-–—.]?\\s*${type}\\s*\\.?\\s*[:.)-]?\\s*`, "i");
+  const title = values
+    .map(value => String(value || "").replace(prefix, "").trim())
+    .find(value => value.length > 0) || "";
+  return `${number}-${type}. ${title}`;
 }
 
 // ─── rasm bloki ────────────────────────────────────────────
@@ -183,6 +195,8 @@ function imageBlock(media, caption) {
   nodes.push(new Paragraph({
     children: [new ImageRun({ data: buf, transformation: { width: w, height: h }, type: "png" })],
     spacing: { before: mm(3), after: mm(1) },
+    keepNext: Boolean(caption),
+    keepLines: true,
     alignment: AlignmentType.CENTER,
     indent: undefined,
   }));
@@ -191,13 +205,24 @@ function imageBlock(media, caption) {
 }
 
 // ─── jadval bloki ──────────────────────────────────────────
+function ensureSyntheticTableCaption(data, caption) {
+  const source = String(data?.data_source || data?.source || "").trim();
+  const synthetic = data?.synthetic === true || (data?.synthetic !== false
+    && (!source || /sintetik|synthetic|illustrative|sample|namunaviy/i.test(source)));
+  if (!synthetic) return String(caption || "");
+  const text = String(caption || data?.title || "Jadval").trim();
+  if (/(?:sintetik|synthetic)/i.test(text) && /(?:real\s+o'lchov\s+emas|not\s+measured)/i.test(text)) return text;
+  return `${text}. Sintetik ma'lumot; real o'lchov emas.`;
+}
+
 function tableBlock(data, caption) {
   const headers = Array.isArray(data.headers) ? data.headers : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   // Jadval bo'sh bo'lsa — umuman chiqarmaymiz
   if (headers.length === 0 && rows.length === 0) return [];
   const nodes = [];
-  if (caption) nodes.push(captionPara(caption));
+  const finalCaption = ensureSyntheticTableCaption(data, caption);
+  if (finalCaption) nodes.push(captionPara(finalCaption));
   const headerRow = new TableRow({
     tableHeader: true,
     children: headers.map((h) => new TableCell({
@@ -304,7 +329,7 @@ function buildCoverPage(meta) {
 }
 
 // ─── REJA SAHIFASI ──────────────────────────────────────────
-// 2-sahifa: "Mavzu: ..." + "REJA" + raqamlangan bo'limlar ro'yxati
+// 2-sahifa: Kirish + faqat raqamlangan asosiy reja bandlari + Xulosa + adabiyotlar.
 function buildReja(chapters, meta) {
   const nodes = [];
   // Mavzu takrorlanadi
@@ -318,40 +343,13 @@ function buildReja(chapters, meta) {
     alignment: AlignmentType.CENTER, spacing: { line: 280, after: mm(4) }, indent: undefined,
   }));
 
-  // Bo'limlar ro'yxatini shakllantirish
-  // Tartib: 1. Kirish → asosiy boblar → 3. Xulosa → 4. Adabiyotlar
-  const list = [];
-  let mainNum = 1;
-  chapters.forEach((ch) => {
-    const title = stripBob(ch.title || "");
-    if (ch.id === "intro") {
-      list.push({ num: String(mainNum++), text: title || "Kirish", level: 1 });
-    } else if (ch.id === "conclusion") {
-      list.push({ num: String(mainNum++), text: title || "Xulosa", level: 1 });
-    } else {
-      // asosiy bo'lim
-      list.push({ num: String(mainNum), text: title, level: 1 });
-      // kichik bo'limlar
-      if (ch.sections && ch.sections.length) {
-        ch.sections.forEach((s, si) => {
-          list.push({ num: `${mainNum}.${si + 1}`, text: stripBob(s.title || ""), level: 2 });
-        });
-      } else if (ch.content) {
-        // contentdan headinglarni topamiz
-        ch.content.filter(c => c.type === "heading" && c.level === 2).forEach((h, hi) => {
-          list.push({ num: `${mainNum}.${hi + 1}`, text: stripBob(h.text || ""), level: 2 });
-        });
-      }
-      mainNum++;
-    }
-  });
-  // Adabiyotlar
-  list.push({ num: String(mainNum), text: "Foydalanilgan adabiyotlar", level: 1 });
+  // Ichki bo'limlar hujjat matnida qoladi, lekin reja sahifasida ko'rsatilmaydi.
+  const list = buildRejaItems(chapters);
 
   list.forEach((item) => {
     nodes.push(new Paragraph({
       children: [new TextRun({
-        text: `${item.num}. ${item.text}`,
+        text: item.num ? `${item.num}. ${item.text}` : item.text,
         font: FONT, size: FONT_SIZE, color: BLACK,
         bold: item.level === 1,
       })],
@@ -360,21 +358,33 @@ function buildReja(chapters, meta) {
     }));
   });
 
-  nodes.push(pageBreakPara());
   return nodes;
 }
 
+function buildRejaItems(chapters = []) {
+  const mainSections = chapters.filter(ch => ch.id !== "intro" && ch.id !== "conclusion");
+  const items = [{ text: "Kirish", level: 1 }];
+  mainSections.forEach((section, index) => {
+    items.push({ num: String(index + 1), text: stripBob(section.title || ""), level: 1 });
+  });
+  items.push({ text: "Xulosa", level: 1 });
+  items.push({ text: "Foydalanilgan adabiyotlar", level: 1 });
+  return items;
+}
+
 // ─── BOB KONTENTI ──────────────────────────────────────────
-function buildChapterContent(chapter, pngCache, isFirst) {
+function buildChapterContent(chapter, pngCache, isFirst, mainNumber = 0) {
   const nodes = [];
-  // Har bir bo'lim (kirish, xulosa, asosiy) yangi sahifadan boshlanadi
-  // isFirst = true bo'lsa — REJA'dan keyin birinchi bo'lim, pageBreak allaqachon bor
-  if (!isFirst) nodes.push(pageBreakPara());
+  // Heading page-break avoids an accidental blank page when previous content
+  // ended exactly at the bottom margin.
 
   // Sarlavha
   const title = stripBob(chapter.title || "");
-  if (chapter.level === 1) nodes.push(heading1(title));
-  else nodes.push(heading2(title));
+  const numberedTitle = chapter.id !== "intro" && chapter.id !== "conclusion" && mainNumber
+    ? `${mainNumber}. ${title}`
+    : title;
+  if (chapter.level === 1) nodes.push(heading1(numberedTitle, { pageBreakBefore: !isFirst || chapter.id === "intro" }));
+  else nodes.push(heading2(numberedTitle));
 
   (chapter.content || []).forEach((item) => {
     if (!item || !item.type) return;
@@ -387,23 +397,28 @@ function buildChapterContent(chapter, pngCache, isFirst) {
         break;
       case "formula": {
         const media = pngCache && pngCache.get("f_" + item.number);
+        const caption = numberedMediaCaption(item.number, "formula", item.caption, item.display_text, item.latex);
         if (media) {
-          nodes.push(...imageBlock(media,
-            `(${item.number || ""}-formula. ${item.caption || item.display_text || ""})`));
+          nodes.push(...imageBlock(media, `(${caption})`));
         } else {
           nodes.push(new Paragraph({
             children: [new TextRun({ text: item.display_text || item.latex || "", font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
             spacing: { ...LINE_SPACING, before: mm(3), after: mm(3) },
             alignment: AlignmentType.CENTER, indent: undefined,
           }));
-          if (item.caption) nodes.push(captionPara(`(${item.number||""})-formula. ${item.caption}`));
+          nodes.push(captionPara(`(${caption})`));
         }
         break;
       }
       case "chart": {
         const media = pngCache && pngCache.get("c_" + item.number);
+        const chartCaption = numberedMediaCaption(item.number, "rasm", item.caption, item.title);
+        const dataSource = String(item.data_source || item.source || "").trim();
+        const captionWithSource = dataSource && !chartCaption.toLowerCase().includes(dataSource.toLowerCase())
+          ? `${chartCaption} Manba/izoh: ${dataSource}`
+          : chartCaption;
         if (media) {
-          nodes.push(...imageBlock(media, item.caption || `${item.number||""}-rasm. ${item.title||""}`));
+          nodes.push(...imageBlock(media, captionWithSource));
         } else {
           // Render qilinmagan bo'lsa — ma'lumotni matn ko'rinishida ko'rsatamiz,
           // hech bo'lmaganda grafik ma'lumoti hujjatda yo'qolmaydi
@@ -411,7 +426,7 @@ function buildChapterContent(chapter, pngCache, isFirst) {
           const labels = Array.isArray(item.labels) ? item.labels : [];
           const values = Array.isArray(item.values) ? item.values : [];
           const dataStr = labels.map((l, i) => `${l}: ${values[i] != null ? values[i] : "?"}`).join("; ");
-          nodes.push(captionPara(item.caption || `${item.number||""}-rasm. ${item.title||""}`));
+          nodes.push(captionPara(captionWithSource));
           nodes.push(new Paragraph({
             children: [new TextRun({ text: `[Grafik: ${item.title || ""} — ${dataStr}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
             spacing: { ...LINE_SPACING, before: mm(2), after: mm(2) },
@@ -420,9 +435,27 @@ function buildChapterContent(chapter, pngCache, isFirst) {
         }
         break;
       }
-      case "table":
-        nodes.push(...tableBlock(item, item.caption || `${item.number||""}-jadval. ${item.title||""}`));
+      case "flowchart": {
+        const media = pngCache && pngCache.get("d_" + item.number);
+        const caption = numberedMediaCaption(item.number, "rasm", item.caption, item.title);
+        if (media) {
+          nodes.push(...imageBlock(media, caption));
+        } else {
+          console.warn(`[mustaqil] flowchart #${item.number} render qilinmagan — matn ko'rinishida chiqariladi`);
+          nodes.push(captionPara(caption));
+          nodes.push(new Paragraph({
+            children: [new TextRun({ text: `[Oqim sxemasi: ${item.title || ""}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
+            spacing: { ...LINE_SPACING, before: mm(2), after: mm(2) },
+            alignment: AlignmentType.CENTER, indent: undefined,
+          }));
+        }
         break;
+      }
+      case "table": {
+        const caption = numberedMediaCaption(item.number, "jadval", item.caption, item.title);
+        nodes.push(...tableBlock(item, caption));
+        break;
+      }
     }
   });
   return nodes;
@@ -431,8 +464,7 @@ function buildChapterContent(chapter, pngCache, isFirst) {
 // ─── ADABIYOTLAR RO'YXATI ──────────────────────────────────
 function buildReferences(refs = []) {
   const nodes = [
-    pageBreakPara(),
-    heading1("FOYDALANILGAN ADABIYOTLAR RO'YXATI"),
+    heading1("FOYDALANILGAN ADABIYOTLAR RO'YXATI", { pageBreakBefore: true }),
     ...emptyLine(1),
   ];
   refs.forEach((ref, i) => {
@@ -452,6 +484,7 @@ function buildReferences(refs = []) {
 // ─── ASOSIY BUILDER ────────────────────────────────────────
 async function buildDocument(fullSpec, pngCache) {
   const { meta, chapters = [], references = [] } = fullSpec;
+  renumberMedia(chapters);
 
   // Joriy yilni majburiy o'rnatish (LLM eski yil yozishi mumkin)
   if (meta) meta.year = String(new Date().getFullYear());
@@ -460,9 +493,11 @@ async function buildDocument(fullSpec, pngCache) {
   const rejaNodes  = buildReja(chapters, meta);
 
   const contentNodes = [];
+  let mainNumber = 0;
   chapters.forEach((ch, i) => {
-    // Birinchi bo'lim REJA'dan keyin keladi — pageBreak allaqachon REJA oxirida bor
-    const chNodes = buildChapterContent(ch, pngCache, i === 0);
+    // Kirish headingi pageBreakBefore bilan REJA'dan keyin boshlanadi.
+    if (ch.id !== "intro" && ch.id !== "conclusion") mainNumber++;
+    const chNodes = buildChapterContent(ch, pngCache, i === 0, mainNumber);
     contentNodes.push(...chNodes);
   });
 
@@ -511,4 +546,4 @@ async function buildDocument(fullSpec, pngCache) {
   return Packer.toBuffer(doc);
 }
 
-module.exports = { buildDocument };
+module.exports = { buildDocument, buildRejaItems };

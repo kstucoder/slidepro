@@ -22,6 +22,7 @@ const { normalizeFormulaSource } = require("../src/mustaqil/formula-data");
 const { validatePlannedMedia } = require("../src/mustaqil/media-validation");
 const { buildRejaItems } = require("../src/mustaqil/builder");
 const { alignPlannedChartBlocks, alignPlannedFormulaBlocks } = require("../src/mustaqil/generate");
+const { resolveFormulaQuota } = require("../src/mustaqil/media-requirements");
 
 test("bob/bo'lim yorliqlari tozalanadi, lekin mazmuniy sarlavha raqami saqlanadi", () => {
   assert.equal(normalizeHeadingTitle("1-bob: Tahlil", { stripNumbering: true }), "Tahlil");
@@ -126,7 +127,7 @@ test("outline normalization exact structure yaratadi va legitimate adabiyot topi
       { title: "Foydalanilgan adabiyotlar" },
     ],
     references: [" Manba A ", null, { title: "noto'g'ri tip" }, " ", "Manba B"],
-  }, { pages: 12, topic: "Sinov mavzusi", language: "o'zbek", studentName: "Talaba" });
+  }, { pages: 12, topic: "Sinov mavzusi", language: "o'zbek", studentName: "Talaba", formulaCount: 2 });
 
   const plan = pagePlan(12);
   assert.equal(outline.chapters.length, plan.mainChapterCount + 2);
@@ -152,6 +153,49 @@ test("outline normalization exact structure yaratadi va legitimate adabiyot topi
   assert.equal(outline.meta.student_name, "Talaba");
   assert.equal(outline.meta.title, "Sinov mavzusi");
   assert.deepEqual(outline.references, ["Manba A", "Manba B"]);
+});
+
+test("formula kvotasi mavzuning miqdoriy xususiyatiga mos, override esa ustuvor", () => {
+  const chapterLimit = pagePlan(16).mainChapterCount;
+  assert.equal(chapterLimit, 4);
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "Avtomatik boshqaruv tizimlari" }), 2);
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "Математическое моделирование физических систем" }), 2);
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "O'zbek adabiyotida realizm" }), 0);
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "Iqtisodiy o'sish va statistik tahlil" }), 2);
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "Quantum error correction in hybrid computing" }), 2,
+    "kvant hisoblash mavzusi eski tor kalit so'zlar ro'yxatisiz ham miqdoriy deb topilsin");
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "Raqamli filologiyada korpus va sentiment tahlili" }), 2,
+    "aralash gumanitar-hisoblash mavzusi hisoblash usullari aniq bo'lganda tanilsin");
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "Markaziy Osiyo she'riyatidagi qiyosiy obrazlar" }), 0,
+    "miqdoriy dalilsiz tavsifiy mavzuga filler formula qo'shilmasin");
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "Avtomatik boshqaruv tizimlari", formulaCount: 0 }), 0);
+  assert.equal(resolveFormulaQuota(chapterLimit, { topic: "Adabiyotshunoslik", formulaCount: 3 }), 3);
+
+  const planned = normalizeOutlineForPages({ chapters: [
+    { title: "Model va jarayonlar", formula_count: 2, formula_plans: [
+      { latex: "G(s)=\\frac{1}{s+1}", concept: "Uzatish funksiyasi" },
+      { latex: "y(t)=1-e^{-t}", concept: "O'tkinchi javob" },
+    ] },
+    { title: "Tahlil" }, { title: "Natijalar" }, { title: "Qo'llanish" },
+  ] }, { pages: 16, topic: "Avtomatik boshqaruv tizimlari" });
+  const main = planned.chapters.filter(chapter => chapter.id !== "intro" && chapter.id !== "conclusion");
+  assert.equal(main.reduce((sum, chapter) => sum + chapter.formula_count, 0), 2,
+    "bir bobga tushib qolgan 2 reja formulasi normallashtirishda yo'qolmasin");
+  assert.deepEqual(main.map(chapter => chapter.formula_count), [1, 1, 0, 0]);
+  assert.deepEqual(main.slice(0, 2).flatMap(chapter => chapter.formula_plans.map(plan => plan.latex)), [
+    "G(s)=\\frac{1}{s+1}", "y(t)=1-e^{-t}",
+  ]);
+
+  const forced = normalizeOutlineForPages({ chapters: [
+    { title: "Badiiy tahlil" }, { title: "Tarixiy kontekst" }, { title: "Uslub" }, { title: "Qabul" },
+  ] }, {
+    pages: 16, topic: "O'zbek adabiyoti", formulaCount: 2,
+    formulaPlans: [{ latex: "a+b=c" }, { latex: "x+y=z" }],
+  });
+  assert.equal(forced.chapters.reduce((sum, chapter) => sum + chapter.formula_count, 0), 2,
+    "aniq formula override tavsifiy mavzuda ham avtomatik qisqartirilmasin");
+  assert.match(outlineUserPrompt({ topic: "O'zbek adabiyoti", pages: 16 }), /aynan 0 ta formula/);
+  assert.match(outlineUserPrompt({ topic: "Avtomatik boshqaruv tizimlari", pages: 16 }), /aynan 2 ta formula/);
 });
 
 test("aniq kvota 4 formula, 2 klassik grafik va 2 flowchartni toza boblarga taqsimlaydi", () => {
@@ -335,6 +379,35 @@ test("asosiy rejaning har bir ichki bandi 398 so'z va uch paragraf bilan cheklan
       assert.ok(paragraphCount <= 3);
     }
   }
+});
+
+test("yakuniy clamp qabul qilingan subsection taqsimotini saqlab, faqat 115% dan oshganini cheklaydi", () => {
+  const chapter = {
+    id: "ch1", word_target: 200,
+    sections: [{ title: "Birinchi", word_target: 100 }, { title: "Ikkinchi", word_target: 100 }],
+  };
+  const content = [
+    { type: "heading", level: 2, text: "noto'g'ri sarlavha" },
+    { type: "paragraph", text: Array(115).fill("birinchi").join(" ") },
+    { type: "formula", number: 1, latex: "x=1" },
+    { type: "heading", level: 2, text: "yana noto'g'ri" },
+    { type: "paragraph", text: Array(85).fill("ikkinchi").join(" ") },
+  ];
+
+  assert.deepEqual(countSectionWords({ content }), [115, 85]);
+  const clamped = clampChapterContent(chapter, content, 1, 1.15);
+  assert.deepEqual(countSectionWords({ content: clamped }), [115, 85]);
+  assert.equal(countWords(clamped), 200);
+  assert.deepEqual(clamped.filter(item => item.type === "heading").map(item => item.text), ["1.1. Birinchi", "1.2. Ikkinchi"]);
+  assert.equal(clamped.some(item => item.type === "formula"), true);
+
+  const overLimit = clampChapterContent(chapter, [
+    { type: "heading", level: 2, text: "1.1. Birinchi" },
+    { type: "paragraph", text: Array(120).fill("uzun").join(" ") },
+    { type: "heading", level: 2, text: "1.2. Ikkinchi" },
+    { type: "paragraph", text: Array(85).fill("ikkinchi").join(" ") },
+  ], 1, 1.15);
+  assert.deepEqual(countSectionWords({ content: overLimit }), [115, 85]);
 });
 
 test("REJA sahifasida faqat Kirish, asosiy sarlavhalar, Xulosa va adabiyotlar chiqadi", () => {
