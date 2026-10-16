@@ -13,6 +13,7 @@ const {
 const { normalizeHeadingTitle } = require("./headings");
 const { renumberMedia } = require("./media-numbering");
 const { sortReferencesAPA, parseApaPartsForDisplay } = require("./references");
+const { cleanMediaText, isSyntheticSource } = require("./media-captions");
 
 const mm = (n) => Math.round(n * 56.692);
 
@@ -182,7 +183,7 @@ function captionPara(text) {
 function numberedMediaCaption(number, type, ...values) {
   const prefix = new RegExp(`^\\s*(?:n|\\d+)\\s*[-–—.]?\\s*${type}\\s*\\.?\\s*[:.)-]?\\s*`, "i");
   const title = values
-    .map(value => String(value || "").replace(prefix, "").trim())
+    .map(value => cleanMediaText(String(value || "").replace(prefix, "").trim()))
     .find(value => value.length > 0) || "";
   return `${number}-${type}. ${title}`;
 }
@@ -206,23 +207,13 @@ function imageBlock(media, caption) {
 }
 
 // ─── jadval bloki ──────────────────────────────────────────
-function ensureSyntheticTableCaption(data, caption) {
-  const source = String(data?.data_source || data?.source || "").trim();
-  const synthetic = data?.synthetic === true || (data?.synthetic !== false
-    && (!source || /sintetik|synthetic|illustrative|sample|namunaviy/i.test(source)));
-  if (!synthetic) return String(caption || "");
-  const text = String(caption || data?.title || "Jadval").trim();
-  if (/(?:sintetik|synthetic)/i.test(text) && /(?:real\s+o'lchov\s+emas|not\s+measured)/i.test(text)) return text;
-  return `${text}. Sintetik ma'lumot; real o'lchov emas.`;
-}
-
 function tableBlock(data, caption) {
   const headers = Array.isArray(data.headers) ? data.headers : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   // Jadval bo'sh bo'lsa — umuman chiqarmaymiz
   if (headers.length === 0 && rows.length === 0) return [];
   const nodes = [];
-  const finalCaption = ensureSyntheticTableCaption(data, caption);
+  const finalCaption = cleanMediaText(caption);
   if (finalCaption) nodes.push(captionPara(finalCaption));
   const headerRow = new TableRow({
     tableHeader: true,
@@ -415,7 +406,7 @@ function buildChapterContent(chapter, pngCache, isFirst, mainNumber = 0) {
         const media = pngCache && pngCache.get("c_" + item.number);
         const chartCaption = numberedMediaCaption(item.number, "rasm", item.caption, item.title);
         const dataSource = String(item.data_source || item.source || "").trim();
-        const captionWithSource = dataSource && !chartCaption.toLowerCase().includes(dataSource.toLowerCase())
+        const captionWithSource = dataSource && !isSyntheticSource(dataSource) && !chartCaption.toLowerCase().includes(dataSource.toLowerCase())
           ? `${chartCaption} Manba/izoh: ${dataSource}`
           : chartCaption;
         if (media) {
@@ -429,7 +420,7 @@ function buildChapterContent(chapter, pngCache, isFirst, mainNumber = 0) {
           const dataStr = labels.map((l, i) => `${l}: ${values[i] != null ? values[i] : "?"}`).join("; ");
           nodes.push(captionPara(captionWithSource));
           nodes.push(new Paragraph({
-            children: [new TextRun({ text: `[Grafik: ${item.title || ""} — ${dataStr}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
+            children: [new TextRun({ text: `[Grafik: ${cleanMediaText(item.title, "Grafik")} — ${dataStr}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
             spacing: { ...LINE_SPACING, before: mm(2), after: mm(2) },
             alignment: AlignmentType.CENTER, indent: undefined,
           }));
@@ -445,7 +436,7 @@ function buildChapterContent(chapter, pngCache, isFirst, mainNumber = 0) {
           console.warn(`[mustaqil] flowchart #${item.number} render qilinmagan — matn ko'rinishida chiqariladi`);
           nodes.push(captionPara(caption));
           nodes.push(new Paragraph({
-            children: [new TextRun({ text: `[Oqim sxemasi: ${item.title || ""}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
+            children: [new TextRun({ text: `[Oqim sxemasi: ${cleanMediaText(item.title, "Oqim sxemasi")}]`, font: FONT, size: FONT_SIZE, italics: true, color: BLACK })],
             spacing: { ...LINE_SPACING, before: mm(2), after: mm(2) },
             alignment: AlignmentType.CENTER, indent: undefined,
           }));

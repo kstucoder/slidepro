@@ -1,11 +1,12 @@
 const MEDIA_TYPES = new Set(["formula", "chart", "flowchart", "table"]);
+const { selectFlowchartTemplates } = require("./flowchart-templates");
 
 function countFor(chapter, type, plans) {
   const field = `${type}_count`;
   return Math.max(0, Math.floor(Number(chapter?.[field]) || 0), plans.length);
 }
 
-function buildMediaSlots(chapters = []) {
+function buildMediaSlots(chapters = [], { random = Math.random } = {}) {
   const slots = [];
   (Array.isArray(chapters) ? chapters : []).forEach((chapter, chapterIndex) => {
     const chapterId = String(chapter?.id || `chapter-${chapterIndex + 1}`);
@@ -40,6 +41,22 @@ function buildMediaSlots(chapters = []) {
         sectionCursor++;
       }
     }
+  });
+  const flowchartSlots = slots.filter(slot => slot.type === "flowchart");
+  const templates = selectFlowchartTemplates(flowchartSlots.length, random);
+  flowchartSlots.forEach((slot, index) => {
+    const template = templates[index];
+    const plan = slot.plan && typeof slot.plan === "object" && !Array.isArray(slot.plan) ? slot.plan : {};
+    slot.template_id = template.id;
+    slot.template_name = template.name;
+    slot.template_description = template.description;
+    slot.plan = {
+      ...plan,
+      template_id: template.id,
+      template_name: template.name,
+      template_description: template.description,
+      template_guidance: template.guidance,
+    };
   });
   return slots;
 }

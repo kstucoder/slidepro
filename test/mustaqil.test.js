@@ -277,7 +277,8 @@ test("bob media bloklari model xatosini aniq formula/chart rejasi bilan normalla
   assert.equal(charts.length, 1);
   assert.equal(charts[0].chartType, "bar");
   assert.equal(charts[0].title, chartPlan.title);
-  assert.equal(charts[0].caption, chartPlan.caption);
+  assert.equal(charts[0].caption, chartPlan.title);
+  assert.doesNotMatch(`${charts[0].title} ${charts[0].caption}`, /sintetik|haqiqiy tajriba o'lchovi emas/i);
   assert.equal(charts[0].data_source, chartPlan.data_source);
   assert.deepEqual(charts[0].labels, chartPlan.labels);
   assert.deepEqual(charts[0].values, chartPlan.values);

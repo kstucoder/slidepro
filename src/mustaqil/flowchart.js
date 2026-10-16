@@ -1,6 +1,7 @@
 const { spawn } = require("node:child_process");
 const sharp = require("sharp");
 const { normalizeFlowchartData } = require("./flowchart-data");
+const { getFlowchartTemplate } = require("./flowchart-templates");
 
 const MAX_DOT_BYTES = 64 * 1024;
 const MAX_PNG_BYTES = 8 * 1024 * 1024;
@@ -16,31 +17,46 @@ function escapeDotText(value) {
 
 function buildFlowchartDot(input) {
   const flowchart = normalizeFlowchartData(input);
+  const template = getFlowchartTemplate(input?.template_id);
+  const rootId = flowchart.nodes.find(node => node.kind === "start")?.id || flowchart.nodes[0].id;
+  const graphAttrs = template.graphAttrs.map(attribute => attribute.replaceAll("__FLOWCHART_ROOT__", rootId));
   const lines = [
     "digraph Flowchart {",
-    '  graph [rankdir=TB, bgcolor="white", pad="0.18", nodesep="0.24", ranksep="0.34", splines=ortho, fontname="DejaVu Sans", labelloc="t", label="' + escapeDotText(flowchart.title) + '", fontsize=18, fontcolor="#18324B"];',
-    '  node [style="rounded,filled", color="#457B9D", fillcolor="#F0F7FA", penwidth=1.4, fontname="DejaVu Sans", fontsize=12, fontcolor="#18324B", margin="0.16,0.10"];',
-    '  edge [color="#457B9D", penwidth=1.5, arrowsize=0.8, fontname="DejaVu Sans", fontsize=10, fontcolor="#40566B"];',
+    `  graph [${[...graphAttrs, 'bgcolor="white"', 'pad="0.18"', 'fontname="DejaVu Sans"', 'labelloc="t"', `label="${escapeDotText(flowchart.title)}"`, 'fontsize=18', 'fontcolor="#18324B"'].join(", ")}];`,
+    '  node [color="#457B9D", penwidth=1.4, fontname="DejaVu Sans", fontsize=12, fontcolor="#18324B", margin="0.16,0.10"];',
+    `  edge [${[...template.edgeAttrs, 'fontname="DejaVu Sans"', 'fontsize=10', 'fontcolor="#40566B"'].join(", ")}];`,
   ];
 
-  for (const node of flowchart.nodes) {
+  const nodeLine = node => {
     const label = escapeDotText(node.label);
-    const options = {
-      start: 'shape=oval, fillcolor="#E5F4EA", color="#4C956C"',
-      end: 'shape=oval, fillcolor="#E5F4EA", color="#4C956C"',
-      process: 'shape=box, style="rounded,filled"',
-      decision: 'shape=diamond, style="filled", fillcolor="#FFF3D6", color="#D4A72C", width=2.8, height=0.85, margin="0.10,0.04"',
-      input: 'shape=parallelogram, style="filled", fillcolor="#F5F8FC"',
-      output: 'shape=parallelogram, style="filled", fillcolor="#E5F4EA", color="#4C956C"',
-    }[node.kind];
-    lines.push(`  ${node.id} [label="${label}", ${options}];`);
+    const options = template.nodeAttrs[node.kind] || template.nodeAttrs.process;
+    return `    ${node.id} [label="${label}", ${options}];`;
+  };
+
+  const clusteredNodes = new Set();
+  for (const cluster of template.clusters || []) {
+    const members = flowchart.nodes.filter(node => cluster.kinds.includes(node.kind));
+    if (!members.length) continue;
+    lines.push(`  subgraph cluster_${cluster.id} {`);
+    lines.push(`    label="${escapeDotText(cluster.label)}"; graph [${cluster.attrs}];`);
+    for (const node of members) {
+      lines.push(nodeLine(node));
+      clusteredNodes.add(node.id);
+    }
+    lines.push("  }");
+  }
+  for (const node of flowchart.nodes) {
+    if (!clusteredNodes.has(node.id)) lines.push(nodeLine(node));
   }
 
+  const nodePositions = new Map(flowchart.nodes.map((node, index) => [node.id, index]));
   for (const edge of flowchart.edges) {
     const isNegative = /^(yo'q|yo‘q|yo'q|no|false)$/i.test(edge.label);
     const edgeAttributes = [];
     if (edge.label) edgeAttributes.push(`label="${escapeDotText(edge.label)}"`);
     if (isNegative) edgeAttributes.push('color="#D9776A"', 'fontcolor="#D9776A"');
+    if (["circular_feedback", "state_machine"].includes(template.id)
+      && nodePositions.get(edge.to) <= nodePositions.get(edge.from)) edgeAttributes.push('style="dashed"');
     const attributes = edgeAttributes.length ? ` [${edgeAttributes.join(", ")}]` : "";
     lines.push(`  ${edge.from} -> ${edge.to}${attributes};`);
   }
@@ -48,7 +64,7 @@ function buildFlowchartDot(input) {
   return lines.join("\n");
 }
 
-function runGraphviz(dot) {
+function runGraphviz(dot, layoutEngine = "dot") {
   if (Buffer.byteLength(dot, "utf8") > MAX_DOT_BYTES) {
     return Promise.reject(new Error("flowchart: DOT manbasi ruxsat etilgan hajmdan katta"));
   }
@@ -59,7 +75,7 @@ function runGraphviz(dot) {
     let stdoutBytes = 0;
     let stderr = "";
     const stdout = [];
-    const child = spawn("dot", ["-Tpng", "-Gdpi=160"], {
+    const child = spawn("dot", [`-K${layoutEngine}`, "-Tpng", "-Gdpi=160"], {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -106,7 +122,8 @@ function runGraphviz(dot) {
 
 async function renderFlowchart(input) {
   const dot = buildFlowchartDot(input);
-  const rawPng = await runGraphviz(dot);
+  const template = getFlowchartTemplate(input?.template_id);
+  const rawPng = await runGraphviz(dot, template.layoutEngine);
   const normalizedPng = await sharp(rawPng)
     .flatten({ background: { r: 255, g: 255, b: 255 } })
     .resize({ width: 1400, height: 1800, fit: "inside", withoutEnlargement: true })

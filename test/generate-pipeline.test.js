@@ -169,6 +169,8 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
     assert.equal(mediaFiles.length, 6, "ikkita formula, ikkita chart va ikkita Graphviz PNG Word fayliga qo'shiladi");
     const documentXml = await archive.file("word/document.xml").async("string");
     assert.equal((documentXml.match(/<w:drawing>/g) || []).length, 6);
+    assert.doesNotMatch(documentXml, /sintetik|synthetic|real o(?:'|&apos;)lchov emas|haqiqiy tajriba o(?:'|&apos;)lchovi emas/i,
+      "yakuniy hujjatdagi media nomlari va captionlarida sun'iy ma'lumot disclosure'i bo'lmasin");
     assert.match(documentXml, /1-formula\. Tizim modeli/);
     assert.match(documentXml, /2-formula\. O(?:&apos;|')tkinchi javob/);
     const bibliographyStart = documentXml.lastIndexOf("Foydalanilgan adabiyotlar");
@@ -194,6 +196,13 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
     assert.equal(requests.filter(prompt => prompt.includes("MEDIA AJRATISH QOIDASI")).length, 6, "6 ta bobning prose so'rovlari media payloadini generatsiya qilmaydi");
     const slotRequests = requests.filter(prompt => prompt.includes("Slot ID:"));
     assert.equal(slotRequests.length, 7, "6 ta media sloti va faqat bitta yaroqsiz formula slotiga qo'shimcha urinish bo'ladi");
+    assert.ok(slotRequests.every(prompt => /status yorlig'i qo'shma|status yorliqlarini ishlatma/i.test(prompt)), "media promptlari captionlarda status/disclosure yorlig'ini taqiqlasin");
+    const flowchartRequests = slotRequests.filter(prompt => prompt.includes('"type":"flowchart"'));
+    assert.equal(flowchartRequests.length, 2, "har bir rejalashtirilgan Graphviz sloti alohida prompt oladi");
+    const selectedTemplates = flowchartRequests.map(prompt => prompt.match(/Tanlangan va o‘zgarmas shablon: ([A-Za-z0-9_]+)/)?.[1]);
+    assert.ok(selectedTemplates.every(Boolean), "har bir Graphviz promptida template ID ko'rsatiladi");
+    assert.equal(new Set(selectedTemplates).size, flowchartRequests.length, "bir hujjatdagi Graphviz shablonlari takrorlanmaydi");
+    assert.ok(flowchartRequests.every(prompt => /Avtomatik boshqaruv tizimlari/.test(prompt) && /bob|Reja:/i.test(prompt)), "Graphviz so'rovlari hujjat mavzusi va bob rejasi bilan boyitiladi");
     assert.equal(new Set(slotRequests.map(prompt => prompt.match(/Slot ID: ([^\s.]+)/)?.[1])).size, 6);
     assert.equal(mediaAttempts.get("ch1:formula:1"), 2, "yaroqsiz LaTeX rejaga mos kelmagani uchun aynan shu slot qayta olinadi");
     assert.equal(mediaAttempts.get("ch2:formula:1"), 1, "ikkinchi yaroqli formula sloti qayta so'ralmaydi");

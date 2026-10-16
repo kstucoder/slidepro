@@ -1,8 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const { normalizeFlowchartData } = require("../src/mustaqil/flowchart-data");
 const { buildFlowchartCaption } = require("../src/mustaqil/flowchart-data");
 const { buildFlowchartDot } = require("../src/mustaqil/flowchart");
+const { FLOWCHART_TEMPLATES } = require("../src/mustaqil/flowchart-templates");
 const { normalizeOutlineForPages, outlineUserPrompt, chapterUserPrompt } = require("../src/mustaqil/prompt");
 const { validatePlannedMedia } = require("../src/mustaqil/media-validation");
 const { alignPlannedFlowchartBlocks, alignPlannedChartBlocks, mediaSlotPrompt } = require("../src/mustaqil/generate");
@@ -36,6 +38,35 @@ test("Graphviz oqim sxemasi xavfsiz JSON sxemasi va DOT string escaping bilan tu
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.map((node, index) => index ? node : { ...node, kind: "record" }) }), /noma'lum node turi/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: validFlowchart.nodes.slice(0, 3) }), /4–12 ta/);
   assert.throws(() => normalizeFlowchartData({ ...validFlowchart, nodes: [...validFlowchart.nodes, ...Array(9).fill(validFlowchart.nodes[0]).map((node, index) => ({ ...node, id: `extra${index}` }))] }), /4–12 ta/);
+});
+
+test("Graphviz shablonlari strukturaviy jihatdan farq qiladi va har biri yaroqli PNG render beradi", () => {
+  assert.ok(FLOWCHART_TEMPLATES.length >= 10);
+  assert.equal(new Set(FLOWCHART_TEMPLATES.map(template => template.id)).size, FLOWCHART_TEMPLATES.length);
+  assert.ok(FLOWCHART_TEMPLATES.every(template => template.name && template.description && template.guidance));
+  const templateFlowchart = {
+    ...validFlowchart,
+    edges: [...validFlowchart.edges, { from: "done", to: "step", label: "Qayta" }],
+  };
+  const dots = FLOWCHART_TEMPLATES.map(template => buildFlowchartDot({ ...templateFlowchart, template_id: template.id }));
+  assert.equal(new Set(dots).size, FLOWCHART_TEMPLATES.length, "har bir uslub alohida DOT tuzilishi yaratadi");
+
+  const byId = Object.fromEntries(FLOWCHART_TEMPLATES.map((template, index) => [template.id, dots[index]]));
+  assert.match(byId.horizontal_pipeline, /rankdir=LR/);
+  assert.match(byId.bottom_up, /rankdir=BT/);
+  assert.match(byId.layered_stages, /subgraph cluster_entry/);
+  assert.match(byId.minimal_text, /shape=plaintext/);
+  assert.match(byId.radial_overview, /root="start"/);
+  assert.match(byId.circular_feedback, /style="dashed"/);
+
+  FLOWCHART_TEMPLATES.forEach((template, index) => {
+    const rendered = spawnSync("dot", [`-K${template.layoutEngine}`, "-Tpng"], {
+      input: dots[index],
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    assert.equal(rendered.status, 0, `${template.id}: ${rendered.stderr?.toString("utf8") || "Graphviz render xatosi"}`);
+    assert.equal(rendered.stdout.subarray(0, 8).toString("hex"), "89504e470d0a1a0a", `${template.id} PNG chiqarsin`);
+  });
 });
 
 test("o‘zbekcha ishda Graphviz ichidagi inglizcha title, tugun va qirra matni saqlanadi", () => {
@@ -232,9 +263,11 @@ test("model diagrammalarni tashlab ketsa, reja asosida sintetik grafik va oqim s
   charts.forEach(chart => {
     assert.equal(normalizeChartData(chart).values.length, 5);
     assert.match(chart.data_source, /sintetik illustrativ ma'lumot; real o'lchov emas/i);
+    assert.doesNotMatch(`${chart.title} ${chart.caption}`, /sintetik|real o'lchov emas/i);
   });
   assert.equal(flowcharts.length, 1);
   assert.match(flowcharts[0].caption, /Izoh:.*topshiriq qiymati/i);
+  assert.doesNotMatch(`${flowcharts[0].title} ${flowcharts[0].caption}`, /sintetik|real o'lchov emas/i);
   assert.equal(validatePlannedMedia([{ content }], [planned], { language: "o'zbek" }), true);
 });
 

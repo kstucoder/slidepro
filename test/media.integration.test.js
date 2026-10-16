@@ -123,7 +123,7 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
           { type: "formula", number: 1, latex: formulaCases[1].latex, caption: "1-formula. Ikkinchi formula" },
           {
             type: "chart", number: 1, title: "Ikkinchi grafik", caption: "N-rasm. Ikkinchi diagramma",
-            labels: ["C", "D"], values: [3, 4], data_source: "ikkinchi sintetik ma’lumot",
+            labels: ["C", "D"], values: [3, 4], data_source: "Official statistical yearbook",
           },
           {
             type: "flowchart", number: 4, title: "PID rostlagichining boshqaruv algoritmi",
@@ -152,12 +152,13 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
   assert.match(documentXml, /1-rasm\. Sinov diagrammasi/);
   assert.match(documentXml, /2-rasm\. Ichimlik suvini tozalash oqimi/);
   assert.match(documentXml, /3-rasm\. Ikkinchi diagramma/);
+  assert.match(documentXml, /Manba\/izoh: Official statistical yearbook/, "haqiqiy manba chart ostyozuvida saqlansin");
   assert.match(documentXml, /4-rasm\. PID rostlagichining boshqaruv algoritmi/);
   assert.match(documentXml, /\(1-formula\. Sinov formulasi\)/);
   assert.match(documentXml, /\(2-formula\. Ikkinchi formula\)/);
   assert.match(documentXml, /1-jadval\. Sinov jadvali/);
-  assert.match(documentXml, /1-jadval\. Sinov jadvali.*Sintetik ma(?:'|&apos;)lumot; real o(?:'|&apos;)lchov emas/,
-    "sintetik jadvalning yakuniy DOCX captionida real o'lchov emasligi aniq yozilsin");
+  assert.doesNotMatch(documentXml, /sintetik|synthetic|real o(?:'|&apos;)lchov emas|haqiqiy tajriba o(?:'|&apos;)lchovi emas/i,
+    "chart va jadval captionlarida sun'iy ma'lumot statusi ko'rinmasin");
   assert.doesNotMatch(documentXml, /N-(?:rasm|formula|jadval)/i);
 });
 
@@ -209,6 +210,6 @@ test("media renderi xato bo'lsa ham DOCX matnli fallback bilan tayyorlanadi", as
   const zip = await JSZip.loadAsync(docx);
   const documentXml = await zip.file("word/document.xml").async("string");
   assert.match(documentXml, /Fallback grafik/);
-  assert.match(documentXml, /Sintetik illustrativ ma(?:'|&apos;)lumot/);
+  assert.doesNotMatch(documentXml, /sintetik|synthetic|real o(?:'|&apos;)lchov emas/i);
   assert.match(documentXml, /Fallback oqim sxemasi/);
 });

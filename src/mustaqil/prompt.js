@@ -690,6 +690,7 @@ ILMIY USLUB VA MANBA INTIZOMI:
 - Birinchi shaxsda ("men kuzatdim", "menimcha") yozma; tahlilni betaraf ilmiy bayon qil.
 - Berilgan manbalar ro'yxatidan chetga chiqma; tekshirilmagan real statistika, yil, foiz yoki o'lchov natijasini keltirma.
 - Graphviz ichidagi title, node va edge matnini model bergandek saqla; inglizcha so'zlar qolishi mumkin. O'zbekcha captionda sxemaning qisqa o'zbekcha izohini ber; har bir labelni alohida tarjima qilish shart emas.
+- Grafik, jadval va oqim sxemasi sarlavha/captionlarida faqat media mazmunini tasvirla; meta-ma'lumot yoki status yorlig'i kiritma.
 
 Umumiy tuzilma:
 ${allTitles}
@@ -717,15 +718,18 @@ CONTENT BLOKLARI:
    - Formula va grafik captionlarida raqam yozma; DOCX raqamlarni hujjat bo'ylab o'zi ketma-ket qo'yadi.
 
 4. Grafik (chart_count > 0):
-   {"type":"chart","chartType":"${chapter.chart_type || "bar"}","title":"<yangi sarlavha>","labels":["..."],"values":[...],"unit":"","data_source":"<tekshiriladigan manba yoki 'namunaviy sintetik ma'lumot'>","caption":"<nomi va izohi>"}
+   {"type":"chart","chartType":"${chapter.chart_type || "bar"}","title":"<yangi sarlavha>","labels":["..."],"values":[...],"unit":"","data_source":"<tekshiriladigan manba yoki bo'sh>","caption":"<nomi va izohi>"}
    - labels va values soni teng bo'lsin; barcha qiymatlar son, finite va shu birlikda bo'lsin; pie qiymatlari manfiy bo'lmasin.
-   - Haqiqiy statistik ma'lumotni uydirma. Faqat foydalanuvchi manbasi yoki ko'rsatilgan manbaga tayangan raqam ishlat; bunday manba bo'lmasa namunaviy qiymat ekanini data_source va captionda aniq yoz.
+   - Qiymatlar haqiqiy o'lchov yoki manbadan olingan bo'lishi shart emas: mavzuga mos, iloji boricha realistik diapazon, birlik va naqshlardan foydalanib, ishonarli hamda o'zaro izchil qiymatlar tuz; vaqt tendensiyasi yoki taqqoslash mazmunan mantiqli bo'lsin.
+   - Haqiqiy manba promptda aniq berilmagan bo'lsa, data_source maydonini bo'sh qoldir va manba uydirma qilma. Sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma; odatiy mazmuniy nom va izoh yoz.
    - labels: 4-6 ta, qisqa (1-3 so'z)
    - GRAFIKDAN OLDIN 1-2 jumla, KEYIN 1-2 jumla tahlil
 
 5. Jadval (table_count > 0):
-   {"type":"table","caption":"N-jadval. ...","number":1,"headers":["..."],"rows":[["..."]]}
+   {"type":"table","caption":"N-jadval. <jadval mazmunining oddiy izohi>","number":1,"headers":["..."],"rows":[["..."]]}
    - Kamida 3 ustun, 3-6 qator
+   - Haqiqiy manba yoki o'lchov bo'lishi shart emas: mavzuga mos, iloji boricha realistik qiymat va tafsilotlar tuz; raqamlar diapazoni, birliklari va qatorlar orasidagi munosabatlar mantiqan izchil bo'lsin.
+   - Manba aniq berilmagan bo'lsa, manba nomini uydirma qilma; sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini yozma.
 
 6. Graphviz oqim sxemasi (flowchart_count > 0):
    {"type":"flowchart","title":"<rejadagi sarlavha>","caption":"Izoh: <sxema nimani ko'rsatishining qisqa o'zbekcha tavsifi>.","nodes":[{"id":"start","label":"<tugun matni inglizcha yoki o'zbekcha>","kind":"start"},{"id":"step1","label":"<jarayon bosqichi>","kind":"process"},{"id":"check","label":"<qaror savoli>","kind":"decision"},{"id":"finish","label":"<yakun>","kind":"end"}],"edges":[{"from":"start","to":"step1","label":""},{"from":"step1","to":"check","label":""},{"from":"check","to":"finish","label":"Ha"}]}

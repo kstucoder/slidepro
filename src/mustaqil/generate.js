@@ -21,6 +21,7 @@ const {
 const { renderFormula } = require("./formula");
 const { renderChart }   = require("./chart");
 const { renderFlowchart } = require("./flowchart");
+const { getFlowchartTemplate } = require("./flowchart-templates");
 const { buildDocument } = require("./builder");
 const { renumberMedia } = require("./media-numbering");
 const { countWords, chapterMainNumber, normalizeChapterContent, clampChapterContent } = require("./structure");
@@ -32,6 +33,7 @@ const { normalizeFormulaSource } = require("./formula-data");
 const { formulaKey } = require("./media-validation");
 const { buildMediaSlots, groupMediaSlotsByChapter, mergeMediaSlotsIntoContent } = require("./media-slots");
 const { postJsonWithRetry } = require("./llm-http");
+const { cleanMediaText } = require("./media-captions");
 const {
   validateBibliography,
   selectBestReferences,
@@ -74,15 +76,17 @@ function parseStructuredJson(text) {
   return parsed;
 }
 
-function mediaSlotPrompt(slot, { topic, language, sourceContent }) {
+function mediaSlotPrompt(slot, { topic, language, sourceContent, chapter }) {
   const planText = JSON.stringify(slot.plan || {});
-  const source = sourceContent ? `\nManba konteksti (faqat shu manba real o'lchovga asos bo'lishi mumkin):\n${String(sourceContent).slice(0, 1800)}` : "";
-  const common = `Mavzu: ${topic || "Mavzu"}. Til: ${language || "o'zbek"}. Slot ID: ${slot.slot_id}. Reja: ${planText}.${source}\nFaqat bitta media obyektini tuz. Slot ID va type qiymatlarini aynan saqla; boshqa izoh yoki markdown bermagin.`;
+  const flowchartTemplate = getFlowchartTemplate(slot.template_id || slot.plan?.template_id);
+  const source = sourceContent ? `\nMavzu va taxminlarni yo'naltirish uchun manba konteksti (qiymatlar bu manbada aynan keltirilgan bo'lishi shart emas):\n${String(sourceContent).slice(0, 1800)}` : "";
+  const chapterContext = chapter?.title ? ` Bob: ${chapter.title}.${chapter.role ? ` Bob vazifasi: ${chapter.role}.` : ""}` : "";
+  const common = `Mavzu: ${topic || "Mavzu"}.${chapterContext} Til: ${language || "o'zbek"}. Slot ID: ${slot.slot_id}. Reja: ${planText}.${source}\nFaqat bitta media obyektini tuz. Slot ID va type qiymatlarini aynan saqla; boshqa izoh yoki markdown bermagin. Sarlavha va caption media mazmunini tabiiy, qisqa ifodalasin; ularga meta-ma'lumot yoki status yorlig'i qo'shma.`;
   const schemas = {
     formula: `Aynan rejalashtirilgan LaTeX formulani qaytar, yangi formula to'qima. JSON: {"slot_id":"${slot.slot_id}","type":"formula","latex":"...","display_text":"...","caption":"..."}`,
-    chart: `Faqat grafik ma'lumotini qaytar. chartType=${slot.chartType}. 2–8 qisqa label va ularga mos finite sonli values; pie uchun ko'pi bilan 5 label va manfiy bo'lmagan qiymatlar. Real manba ko'rsatilmagan bo'lsa, ishonchli statistika uydirma qilma: namunaviy sintetik qiymatlar yarat va data_source ham captionda bu ma'lumot sintetik, real o'lchov emasligini aniq yoz. JSON: {"slot_id":"${slot.slot_id}","type":"chart","chartType":"${slot.chartType}","title":"...","labels":["..."],"values":[1,2],"unit":"","data_source":"...","caption":"..."}`,
-    flowchart: `Faqat Graphviz uchun JSON strukturani qaytar; DOT yoki kod qaytarma. 4–12 node, id lotin harfidan boshlanadigan xavfsiz id, kind faqat start/end/process/decision/input/output; barcha edge mavjud node'larni ulang. Title, node va edge matnini mavzuga mos, tushunarli inglizcha yoki o'zbekcha berishing mumkin; til yoki lug'at talabi sababli sxemani to'xtatma. O'zbekcha ishda captionni o'zbekcha yozib, "Izoh:" bilan sxema nimani ko'rsatishini 1–2 qisqa jumlada tushuntir; har bir label uchun tarjima/glossariy shart emas. JSON: {"slot_id":"${slot.slot_id}","type":"flowchart","title":"...","caption":"Izoh: sxemada jarayon bosqichlari va qarorlar ketma-ketligi ko'rsatiladi.","nodes":[{"id":"start","label":"...","kind":"start"},{"id":"step","label":"...","kind":"process"},{"id":"decision","label":"...","kind":"decision"},{"id":"finish","label":"...","kind":"end"}],"edges":[{"from":"start","to":"step","label":""},{"from":"step","to":"decision","label":""},{"from":"decision","to":"finish","label":"Ha"}]}`,
-    table: `Faqat bitta jadval ma'lumotini qaytar; kamida 3 ustun va 3–6 qator, barcha qatorlarda ustunlar soni teng bo'lsin. Faktlar manbadan kelmasa, sintetik illustrativ misol ekanini captionda aniq yoz. Jadval sintetik bo'lsa captionda aynan "Sintetik ma'lumot; real o'lchov emas" jumlasi bo'lsin. JSON: {"slot_id":"${slot.slot_id}","type":"table","title":"...","caption":"...","headers":["A","B","C"],"rows":[["...","...","..."],["...","...","..."],["...","...","..."]]}`,
+    chart: `Faqat grafik ma'lumotini qaytar. chartType=${slot.chartType}. 2–8 qisqa label va ularga mos finite sonli values; pie uchun ko'pi bilan 5 label va manfiy bo'lmagan qiymatlar. Qiymatlar haqiqiy o'lchov yoki manbadan olingan bo'lishi shart emas: mavzu, reja va kontekstga mos, iloji boricha real hayotda uchrashi mumkin bo'lgan diapazon, birlik va naqshlarni tanlab, ishonarli hamda o'zaro izchil qiymatlar tuz. Taqqoslash yoki vaqt tendensiyasi mazmunan mantiqli bo'lsin. Haqiqiy manba promptda berilmagan bo'lsa, manba nomini uydirma qilma va data_source maydonini bo'sh qoldir; faqat berilgan manbada tegishli ma'lumot aniq ko'rsatilgan bo'lsa, uning nomini yoz. Sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma. JSON: {"slot_id":"${slot.slot_id}","type":"chart","chartType":"${slot.chartType}","title":"...","labels":["..."],"values":[1,2],"unit":"","data_source":"","caption":"..."}`,
+    flowchart: `Faqat Graphviz uchun JSON strukturani qaytar; DOT yoki kod qaytarma. Tanlangan va o‘zgarmas shablon: ${flowchartTemplate.id} — ${flowchartTemplate.name}. Shablon vazifasi: ${flowchartTemplate.description} Tuzilish bo‘yicha ko‘rsatma: ${flowchartTemplate.guidance} Bu hujjatdagi mavzu, bob, reja maqsadi va kontekstga xos aniq jarayon ma’lumotlarini tuz; generic, mavzudan uzilgan bosqichlar bermagin. Shablonning tuzilishiga mos node/edge mazmuni va mantiqiy yo‘nalishni ishlab chiq, ammo JSONga template ID yoki DOT kod qo‘shma — tanlangan ko‘rinishni renderer o‘zi qo‘llaydi. 4–12 node, id lotin harfidan boshlanadigan xavfsiz id, kind faqat start/end/process/decision/input/output; barcha edge mavjud node'larni ulang. Title, node va edge matnini mavzuga mos, tushunarli inglizcha yoki o'zbekcha berishing mumkin; til yoki lug'at talabi sababli sxemani to'xtatma. O'zbekcha ishda captionni o'zbekcha yozib, "Izoh:" bilan aynan shu mavzudagi sxema nimani ko'rsatishini 1–2 qisqa jumlada tushuntir; har bir label uchun tarjima/glossariy shart emas. JSON: {"slot_id":"${slot.slot_id}","type":"flowchart","title":"...","caption":"Izoh: sxemada mavzuga tegishli jarayon va qarorlar ko‘rsatiladi.","nodes":[{"id":"start","label":"...","kind":"start"},{"id":"step","label":"...","kind":"process"},{"id":"decision","label":"...","kind":"decision"},{"id":"finish","label":"...","kind":"end"}],"edges":[{"from":"start","to":"step","label":""},{"from":"step","to":"decision","label":""},{"from":"decision","to":"finish","label":"Ha"}]}`,
+    table: `Faqat bitta jadval ma'lumotini qaytar; kamida 3 ustun va 3–6 qator, barcha qatorlarda ustunlar soni teng bo'lsin. Haqiqiy manba yoki o'lchov bo'lishi shart emas: jadvalni mavzuga mos, iloji boricha realistik tafsilotlar va (kerak bo'lsa) ishonarli raqamlar bilan to'ldir. Raqamli qiymatlarning diapazoni, birliklari, aniqlik darajasi va qatorlar orasidagi munosabatlar o'zaro mantiqan izchil bo'lsin. Manba promptda aniq berilmagan bo'lsa, manba nomi yoki havolasini uydirma qilma. Sarlavha/captionda sintetik, AI yoki real emas kabi status yorliqlarini ishlatma; jadval mazmunini tabiiy ifodala. JSON: {"slot_id":"${slot.slot_id}","type":"table","title":"...","caption":"...","headers":["A","B","C"],"rows":[["...","...","..."],["...","...","..."],["...","...","..."]]}`,
   };
   return `${common}\n${schemas[slot.type] || "Noma'lum media turi."}`;
 }
@@ -175,12 +179,12 @@ async function prerenderMedia(chapters, language = "o'zbek", initialCache = new 
       if (item.type === "chart") {
         const key = `c_${item.number}`;
         item._mediaKey = key;
-        if (!cache.has(key)) tasks.push({ key, kind: "chart", chapter: ch.title || ch.id, fn: () => renderChart(item) });
+        if (!cache.has(key)) tasks.push({ key, kind: "chart", chapter: ch.title || ch.id, fn: () => renderChart({ ...item, title: cleanMediaText(item.title, "Grafik") }) });
       }
       if (item.type === "flowchart") {
         const key = `d_${item.number}`;
         item._mediaKey = key;
-        if (!cache.has(key)) tasks.push({ key, kind: "flowchart", chapter: ch.title || ch.id, fn: () => renderFlowchart({ ...item, language }) });
+        if (!cache.has(key)) tasks.push({ key, kind: "flowchart", chapter: ch.title || ch.id, fn: () => renderFlowchart({ ...item, title: cleanMediaText(item.title, "Oqim sxemasi"), language }) });
       }
     });
   });
@@ -227,7 +231,7 @@ function defaultChartLabels() {
 }
 
 function fallbackFlowchart(plan, chapter, language, index) {
-  const title = String(plan?.title || `${chapter?.title || "Mavzu"}: jarayon bosqichlari${index ? ` (${index + 1})` : ""}`).trim().slice(0, 180);
+  const title = cleanMediaText(plan?.title || `${chapter?.title || "Mavzu"}: jarayon bosqichlari${index ? ` (${index + 1})` : ""}`, `${chapter?.title || "Mavzu"}: jarayon bosqichlari`).slice(0, 180);
   const defaultPurpose = isUzbek(language)
     ? `${chapter?.title || title} bo'yicha asosiy jarayon va qarorlar ketma-ketligi`
     : isRussian(language)
@@ -240,6 +244,7 @@ function fallbackFlowchart(plan, chapter, language, index) {
       : ["Start", "Receive input", "Perform main step", "Does the result meet criteria?", "Perform next step", "Finish"];
   const flowchart = {
     type: "flowchart",
+    template_id: plan?.template_id || "classic_vertical",
     title,
     nodes: [
       { id: "start", label: labels[0], kind: "start" },
@@ -258,7 +263,7 @@ function fallbackFlowchart(plan, chapter, language, index) {
       { from: "next", to: "process", label: "" },
     ],
   };
-  flowchart.caption = buildFlowchartCaption(flowchart, plan?.purpose || defaultPurpose, language);
+  flowchart.caption = cleanMediaText(buildFlowchartCaption(flowchart, plan?.purpose || defaultPurpose, language), title);
   return flowchart;
 }
 
@@ -302,13 +307,13 @@ function alignPlannedChartBlocks(chapter, content) {
       values = syntheticChartValues(labels.length, plan.title || candidate.title || chapter.title);
       synthetic = true;
     }
-    const title = String(plan.title || candidate.title || `${chapter.title || "Mavzu"}: asosiy ko'rsatkichlar`).trim();
+    const title = cleanMediaText(plan.title || candidate.title || `${chapter.title || "Mavzu"}: asosiy ko'rsatkichlar`, `${chapter.title || "Mavzu"}: asosiy ko'rsatkichlar`);
     return {
       ...candidate,
       type: "chart",
       chartType,
       title,
-      caption: String(plan.caption || plan.title || candidate.caption || title),
+      caption: cleanMediaText(plan.caption || plan.title || candidate.caption || title, title),
       labels,
       values,
       unit: String(plan.unit || candidate.unit || ""),
@@ -370,9 +375,10 @@ function alignPlannedFlowchartBlocks(chapter, content, language = "o'zbek") {
     } catch {
       flowchart = fallbackFlowchart(plan, chapter, language, index);
     }
-    flowchart.title = String(flowchart.title || plan.title || "Oqim sxemasi").trim().slice(0, 180);
+    flowchart.title = cleanMediaText(flowchart.title || plan.title || "Oqim sxemasi", "Oqim sxemasi").slice(0, 180);
+    flowchart.template_id = flowchart.template_id || plan.template_id || "classic_vertical";
     // Yorliq tili Graphviz renderiga ta'sir qilmaydi; captionda qisqa o'zbekcha izoh qoladi.
-    flowchart.caption = buildFlowchartCaption(flowchart, plan.purpose, language);
+    flowchart.caption = cleanMediaText(buildFlowchartCaption(flowchart, plan.purpose, language), flowchart.title);
     return flowchart;
   });
   let flowchartIndex = 0;
@@ -406,14 +412,10 @@ function normalizeMediaSlotResult(slot, response, { chapter, language }) {
     const chartType = slot.chartType;
     if (!["bar", "line", "pie"].includes(chartType)) throw new Error(`noma'lum chartType (${chartType})`);
     const candidate = { ...plan, ...response, type: "chart", chartType };
-    candidate.title = String(plan.title || response.title || `${chapter?.title || "Mavzu"}: asosiy ko'rsatkichlar`).trim();
+    candidate.title = cleanMediaText(plan.title || response.title || `${chapter?.title || "Mavzu"}: asosiy ko'rsatkichlar`, `${chapter?.title || "Mavzu"}: asosiy ko'rsatkichlar`);
     const source = String(response.data_source || response.source || plan.data_source || "").trim();
-    const synthetic = !source || /sintetik|synthetic|illustrative|sample|namuna|simulyatsiya/i.test(source);
     candidate.data_source = source || "Sintetik illustrativ ma'lumot; real o'lchov emas";
-    candidate.caption = String(response.caption || plan.caption || candidate.title).trim();
-    if (synthetic && !/sintetik|synthetic|illustrative|sample|namuna|simulyatsiya/i.test(candidate.caption)) {
-      candidate.caption = `${candidate.caption}. Sintetik illustrativ ma'lumot; real o'lchov emas.`;
-    }
+    candidate.caption = cleanMediaText(response.caption || plan.caption || candidate.title, candidate.title);
     return { ...candidate, ...normalizeChartData(candidate), slot_id: slot.slot_id };
   }
 
@@ -421,13 +423,14 @@ function normalizeMediaSlotResult(slot, response, { chapter, language }) {
     const normalized = normalizeFlowchartData({
       ...response,
       type: "flowchart",
-      title: String(plan.title || response.title || "Oqim sxemasi").trim(),
+      title: cleanMediaText(plan.title || response.title || "Oqim sxemasi", "Oqim sxemasi"),
     }, { language });
     return {
       type: "flowchart",
       ...normalized,
+      template_id: slot.template_id || plan.template_id || "classic_vertical",
       slot_id: slot.slot_id,
-      caption: buildFlowchartCaption({ ...normalized, caption: response.caption }, plan.purpose, language),
+      caption: cleanMediaText(buildFlowchartCaption({ ...normalized, caption: response.caption }, plan.purpose, language), normalized.title),
     };
   }
 
@@ -437,11 +440,8 @@ function normalizeMediaSlotResult(slot, response, { chapter, language }) {
     if (headers.length < 3 || rows.length < 3 || rows.length > 6 || rows.some(row => !Array.isArray(row) || row.length !== headers.length)) {
       throw new Error("jadval kamida 3 ustun va mos 3–6 qator bo'lishi kerak");
     }
-    const title = String(plan.title || response.title || `${chapter?.title || "Mavzu"}: taqqoslash jadvali`).trim();
-    const rawCaption = String(response.caption || plan.caption || title).trim();
-    const caption = /sintetik|synthetic/i.test(rawCaption) && /real\s+o'lchov\s+emas|not\s+measured/i.test(rawCaption)
-      ? rawCaption
-      : `${rawCaption}. Sintetik ma'lumot; real o'lchov emas.`;
+    const title = cleanMediaText(plan.title || response.title || `${chapter?.title || "Mavzu"}: taqqoslash jadvali`, `${chapter?.title || "Mavzu"}: taqqoslash jadvali`);
+    const caption = cleanMediaText(response.caption || plan.caption || title, title);
     return { type: "table", slot_id: slot.slot_id, title, caption, headers, rows, data_source: response.data_source || "Sintetik illustrativ ma'lumot; real o'lchov emas", synthetic: true };
   }
   throw new Error(`Noma'lum media turi: ${slot.type}`);
@@ -465,18 +465,22 @@ function fallbackMediaSlot(slot, { chapter, language }) {
       chart_type: slot.chartType,
       chart_plans: [typeof plan === "object" && plan ? plan : {}],
     }, []).filter(item => item.type === "chart");
-    return { ...chart, slot_id: slot.slot_id, caption: `${chart.caption || chart.title}. Sintetik illustrativ ma'lumot; real o'lchov emas.`, _syntheticFallback: true };
+    return { ...chart, slot_id: slot.slot_id, caption: cleanMediaText(chart.caption || chart.title, chart.title), _syntheticFallback: true };
   }
   if (slot.type === "flowchart") {
     return { ...fallbackFlowchart(plan, chapter, language, slot.ordinal - 1), slot_id: slot.slot_id, _syntheticFallback: true };
   }
   if (slot.type === "table") {
-    const title = String(plan.title || `${chapter?.title || "Mavzu"}: taqqoslash jadvali`);
+    const title = cleanMediaText(plan.title || `${chapter?.title || "Mavzu"}: taqqoslash jadvali`, `${chapter?.title || "Mavzu"}: taqqoslash jadvali`);
     return {
       type: "table", slot_id: slot.slot_id, title,
-      caption: `${title}. Sintetik illustrativ misol; real o'lchov emas.`,
-      headers: ["Bosqich", "Tavsif", "Namuna"],
-      rows: [["1-bosqich", "Asosiy jarayon", "Illustrativ"], ["2-bosqich", "Oraliq natija", "Illustrativ"], ["3-bosqich", "Yakuniy natija", "Illustrativ"]],
+      caption: title,
+      headers: ["Bosqich", "Asosiy amal", "Kutiladigan natija"],
+      rows: [
+        ["1-bosqich", `${chapter?.title || "Mavzu"} bo'yicha boshlang'ich holatni aniqlash`, "Tahlil mezonlari belgilanadi"],
+        ["2-bosqich", "Tanlangan yondashuvni asosiy mezonlar bo'yicha qo'llash", "Taqqoslanadigan natijalar olinadi"],
+        ["3-bosqich", "Natijalarni belgilangan mezonlar bilan baholash", "Takomillashtirish yo'nalishi aniqlanadi"],
+      ],
       data_source: "Sintetik illustrativ ma'lumot; real o'lchov emas",
       _syntheticFallback: true,
     };
@@ -487,8 +491,8 @@ function fallbackMediaSlot(slot, { chapter, language }) {
 async function renderAndVerifyMedia(item, language) {
   let image = null;
   if (item.type === "formula") image = await renderFormula(item.latex || item.display_text || "");
-  else if (item.type === "chart") image = await renderChart(item);
-  else if (item.type === "flowchart") image = await renderFlowchart({ ...item, language });
+  else if (item.type === "chart") image = await renderChart({ ...item, title: cleanMediaText(item.title, "Grafik") });
+  else if (item.type === "flowchart") image = await renderFlowchart({ ...item, title: cleanMediaText(item.title, "Oqim sxemasi"), caption: cleanMediaText(item.caption), language });
   else return null;
   if (!image || !Buffer.isBuffer(image.buf) || !image.buf.length) throw new Error("render bo'sh yoki rasm yaroqsiz");
   const metadata = await sharp(image.buf).metadata();
@@ -500,12 +504,13 @@ async function renderAndVerifyMedia(item, language) {
 
 async function generateMediaSlot(slot, { chapter, topic, language, sourceContent, llm }) {
   const maxTokens = slot.type === "flowchart" ? 1800 : slot.type === "chart" || slot.type === "table" ? 1000 : 500;
+  const maxAttempts = slot.type === "chart" || slot.type === "table" ? 1 : SLOT_RETRY_LIMIT;
   let lastError;
-  for (let attempt = 1; attempt <= SLOT_RETRY_LIMIT; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const text = await callLLM({
         system: "Sen bitta akademik media slotining strukturalangan ma'lumotini tayyorlaysan. Javob faqat yaroqli JSON bo'lsin.",
-        user: mediaSlotPrompt(slot, { topic, language, sourceContent }),
+        user: mediaSlotPrompt(slot, { topic, language, sourceContent, chapter }),
         llm,
         maxTokens,
       });
@@ -515,7 +520,7 @@ async function generateMediaSlot(slot, { chapter, topic, language, sourceContent
       return { slot, item, image, fallback: false };
     } catch (error) {
       lastError = error;
-      console.warn(`[mustaqil] media slot ${slot.slot_id} urinish ${attempt}/${SLOT_RETRY_LIMIT} xato: ${error.message}`);
+      console.warn(`[mustaqil] media slot ${slot.slot_id} urinish ${attempt}/${maxAttempts} xato: ${error.message}`);
     }
   }
 
@@ -1183,6 +1188,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
 
 module.exports = {
   generateMustaqilIsh,
+  generateMediaSlot,
   alignPlannedChartBlocks,
   alignPlannedFormulaBlocks,
   alignPlannedFlowchartBlocks,
