@@ -167,6 +167,7 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
   let activeRequests = 0;
   let maxRequests = 0;
   const requests = [];
+  const progressUpdates = [];
   const mediaAttempts = new Map();
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "slidepro-pipeline-"));
   const outFile = path.join(tempDir, "pipeline.docx");
@@ -197,9 +198,12 @@ test("16 betlik ish DOCX yaratadi va PDF/layout tekshiruvisiz media slotlarini b
     const result = await generateMustaqilIsh({
       topic: "Avtomatik boshqaruv tizimlari", pages: 16, language: "o'zbek", outFile,
       llm: { provider: "openai", openaiKey: "mock-key", openaiModel: "mock-model" },
+      onProgress: update => progressUpdates.push(update),
     });
     assert.equal(result.title, "Pipeline sinovi");
     assert.equal(result.pageVerification, "skipped", "DOCX generatsiyasi PDF/layout tekshiruviga bog'liq emas");
+    assert.deepEqual(progressUpdates.map(update => update.percent), [12, 60, 85, 97]);
+    assert.ok(progressUpdates.every((update, index) => index === 0 || update.percent >= progressUpdates[index - 1].percent));
     assert.equal(result.pageCount, null, "PDF tekshirilmagani uchun haqiqiy bet soni da'vo qilinmaydi");
     assert.equal(result.layoutVerification.status, "skipped");
     assert.equal(result.layoutVerification.actualPageCount, null);

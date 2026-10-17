@@ -988,7 +988,12 @@ async function retryDeficientTextSlots(chapters, outlineChapters, retry, concurr
 }
 
 // в”Ђв”Ђ ASOSIY GENERATSIYA в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-async function generateMustaqilIsh({ topic, pages, language, studentName, studentGroup, org, supervisor, sourceContent, llm, outFile, flowchartCount = null, chartCount, chartPlans, formulaCount, formulaPlans }) {
+async function generateMustaqilIsh({ topic, pages, language, studentName, studentGroup, org, supervisor, sourceContent, llm, outFile, flowchartCount = null, chartCount, chartPlans, formulaCount, formulaPlans, onProgress }) {
+  const reportProgress = async (percent, phase) => {
+    if (typeof onProgress !== "function") return;
+    try { await onProgress({ percent, phase }); }
+    catch (error) { console.warn("[mustaqil] progress yangilashda xato:", error.message); }
+  };
   console.log("[mustaqil] boshlandi:", topic, pages+"bet");
   const lang    = language || "o'zbek";
   const pagePlanForWork = pagePlan(pages);
@@ -1132,6 +1137,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   const mediaSlots = buildMediaSlots(outline.chapters, { topic });
   const slotsByChapter = groupMediaSlotsByChapter(mediaSlots);
   console.log(`[mustaqil] media slotlari: ${mediaSlots.length} ta (${mediaSlots.map(slot => slot.slot_id).join(", ") || "yo'q"})`);
+  await reportProgress(12, "Reja va manbalar tayyor");
 
   // Prose and type-specific media requests share one bounded queue.
   console.log(`[mustaqil] 2-pass: matn va media slotlari parallel (concurrency=${boundedConcurrency()})...`);
@@ -1180,6 +1186,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
       chapterMainNumber(outline.chapters, index),
     );
   });
+  await reportProgress(60, "Boblar matni va media tayyor");
 
   // в”Ђв”Ђ VALIDATSIYA: takror formula/grafik, asosiy bobda kirish/xulosa в”Ђв”Ђ
   // State tracking (faqat shu generatsiya uchun):
@@ -1370,6 +1377,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   const budgetedWords = chapters.reduce((sum, chapter) => sum + countWords(chapter.content), 0);
   console.log("[mustaqil] Word matn byudjeti:", budgetedWords + "/" + totalWt);
   validatePlannedMedia(chapters, outline.chapters, { language: lang });
+  await reportProgress(85, "Matn va reja tekshirildi");
 
   // Render and build the final document.
   console.log("[mustaqil] render + docx...");
@@ -1394,6 +1402,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   };
   fs.writeFileSync(outFile, buf);
   console.log("[mustaqil] tayyor:", outFile, Math.round(buf.length/1024)+"KB");
+  await reportProgress(97, "DOCX tayyor, yuborilmoqda");
 
   // CLEANUP: state ma'lumotlari faqat shu generatsiya uchun ishlatildi
   // DB'ga saqlanmaydi, har generatsiya mustaqil
