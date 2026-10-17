@@ -79,6 +79,31 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
   assert.ok(Math.abs(flowchart.width / flowchart.height - flowchartMetadata.width / flowchartMetadata.height) < 0.01, "qator oralig‘i oshganda rasm proporsiyasi saqlansin");
   imageCache.set("d_2", flowchart);
 
+  const algorithmFlowchartInput = {
+    type: "flowchart", diagram_type: "algorithm_flowchart", title: "Suv sifatini tekshirish algoritmi",
+    nodes: [
+      { id: "start", label: "Boshlash", kind: "start" },
+      { id: "sample", label: "Suv namunasini olish", kind: "process" },
+      { id: "measure", label: "Suv sifatini o'lchash", kind: "process" },
+      { id: "evaluate", label: "Mezon bo'yicha baholash", kind: "process" },
+      { id: "end", label: "Yakunlash", kind: "end" },
+    ],
+    edges: [
+      { from: "start", to: "sample" }, { from: "sample", to: "measure" },
+      { from: "measure", to: "evaluate" }, { from: "evaluate", to: "end" },
+    ],
+    caption: "Suv sifatini tekshirish algoritmi. Izoh: namuna olish, o‘lchash va mezon bo‘yicha baholash.",
+  };
+  const algorithmFlowchart = await renderFlowchart(algorithmFlowchartInput);
+  const algorithmMetadata = await sharp(algorithmFlowchart.buf).metadata();
+  assert.equal(algorithmMetadata.width, 576);
+  assert.equal(algorithmMetadata.height, 1035);
+  assert.equal(algorithmFlowchart.width, 1.92 * 96);
+  assert.equal(algorithmFlowchart.height, 3.45 * 96);
+  assert.ok(Math.abs(algorithmFlowchart.width / algorithmFlowchart.height - algorithmMetadata.width / algorithmMetadata.height) < 0.001,
+    "vertikal algoritm rasmi 1.92 × 3.45 dyuymga aynan mos nisbatda saqlansin");
+  imageCache.set("d_5", algorithmFlowchart);
+
   const controllerFlowchart = await renderFlowchart({
     type: "flowchart",
     diagram_type: "pid_control_system",
@@ -140,6 +165,7 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
             nodes: [{ id: "setpoint", label: "Topshiriq signali", kind: "input" }, { id: "sum", label: "Σ", kind: "sum" }, { id: "controller", label: "PID rostlagich", kind: "controller" }, { id: "plant", label: "Boshqaruv obyekti", kind: "plant" }, { id: "sensor", label: "Datchik o'lchovi", kind: "sensor" }],
             edges: [{ from: "setpoint", to: "sum" }, { from: "sum", to: "controller" }, { from: "controller", to: "plant" }, { from: "plant", to: "sensor" }, { from: "sensor", to: "sum", label: "Teskari aloqa" }],
           },
+          { ...algorithmFlowchartInput, number: 5 },
         ],
       },
       { id: "conclusion", title: "Xulosa", content: [] },
@@ -154,13 +180,15 @@ test("MathJax, bar/line/pie va DOCX ichiga rasm qo‘shish integratsiyasi", asyn
   const zip = await JSZip.loadAsync(docx);
   const documentXml = await zip.file("word/document.xml").async("string");
   const mediaEntries = Object.entries(zip.files).filter(([name, entry]) => name.startsWith("word/media/") && !entry.dir);
-  assert.equal(mediaEntries.length, 6, "formula, chart va ikkala Graphviz rasm fayli DOCX ichida bo'lishi kerak");
+  assert.equal(mediaEntries.length, 7, "formula, chart va uchta Graphviz rasm fayli DOCX ichida bo'lishi kerak");
   const imageParagraphs = (documentXml.match(/<w:p\b[\s\S]*?<\/w:p>/g) || []).filter(paragraph => paragraph.includes("<w:drawing>"));
-  assert.equal(imageParagraphs.length, 6, "barcha oltita rasm alohida DOCX paragrafida joylashishi kerak");
+  assert.equal(imageParagraphs.length, 7, "barcha yettita rasm alohida DOCX paragrafida joylashishi kerak");
   assert.ok(imageParagraphs.every(paragraph => /<w:keepNext\b/.test(paragraph)), "har bir rasm ostyozuv paragrafi bilan birga keyingi sahifaga ko'chishi kerak");
   assert.match(documentXml, /1-rasm\. Sinov diagrammasi/);
   assert.match(documentXml, /2-rasm\. Ichimlik suvini tozalash tarkibi/);
   assert.match(documentXml, /3-rasm\. Ikkinchi diagramma/);
+  assert.match(documentXml, /5-rasm\. Suv sifatini tekshirish algoritmi/);
+  assert.match(documentXml, /<wp:extent cx="1752600" cy="3152775"\/>/, "algoritm rasmi Word hujjatida 1.92 × 3.45 dyuymga mos o‘lchamda qoladi");
   assert.match(documentXml, /Manba\/izoh: Official statistical yearbook/, "haqiqiy manba chart ostyozuvida saqlansin");
   assert.match(documentXml, /4-rasm\. PID boshqaruv tizimining tarkibi/);
   assert.match(documentXml, /\(1-formula\. Sinov formulasi\)/);

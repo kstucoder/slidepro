@@ -9,6 +9,12 @@ const MAX_PNG_BYTES = 8 * 1024 * 1024;
 const RENDER_TIMEOUT_MS = 15_000;
 const FLOWCHART_HEIGHT_SCALE = 1.5;
 const FLOWCHART_LABEL_LINE_LENGTH = 20;
+// DOCX ImageRun uses 96 px per inch; canvas ratio matches these fixed algorithm-diagram dimensions.
+const ALGORITHM_WORD_WIDTH_IN = 1.92;
+const ALGORITHM_WORD_HEIGHT_IN = 3.45;
+const WORD_PIXELS_PER_INCH = 96;
+const ALGORITHM_CANVAS_WIDTH = 576;
+const ALGORITHM_CANVAS_HEIGHT = 1035;
 
 function escapeDotText(value) {
   return String(value)
@@ -180,22 +186,25 @@ function runGraphviz(dot, layoutEngine = "dot") {
 
 async function renderFlowchart(input) {
   const dot = buildFlowchartDot(input);
-  const template = getFlowchartTemplate(input?.template_id);
+  const template = getFlowchartTemplate(input?.template_id || input?.diagram_type);
   const rawPng = await runGraphviz(dot, template.layoutEngine);
+  const isAlgorithm = template.id === "algorithm_flowchart";
   const normalizedPng = await sharp(rawPng)
     .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .resize({ width: 1400, height: 1800, fit: "inside", withoutEnlargement: true })
+    .resize(isAlgorithm
+      ? { width: ALGORITHM_CANVAS_WIDTH, height: ALGORITHM_CANVAS_HEIGHT, fit: "contain", withoutEnlargement: false, background: { r: 255, g: 255, b: 255 } }
+      : { width: 1400, height: 1800, fit: "inside", withoutEnlargement: true })
     .png()
     .toBuffer();
   const metadata = await sharp(normalizedPng).metadata();
   if (metadata.format !== "png" || !metadata.width || !metadata.height) {
     throw new Error("flowchart: yaroqli PNG rasm olinmadi");
   }
-  const scale = Math.min(520 / metadata.width, 620 / metadata.height, 1);
+  const scale = isAlgorithm ? 1 : Math.min(520 / metadata.width, 620 / metadata.height, 1);
   return {
     buf: normalizedPng,
-    width: Math.max(1, Number((metadata.width * scale).toFixed(6))),
-    height: Math.max(1, Number((metadata.height * scale).toFixed(6))),
+    width: isAlgorithm ? ALGORITHM_WORD_WIDTH_IN * WORD_PIXELS_PER_INCH : Math.max(1, Number((metadata.width * scale).toFixed(6))),
+    height: isAlgorithm ? ALGORITHM_WORD_HEIGHT_IN * WORD_PIXELS_PER_INCH : Math.max(1, Number((metadata.height * scale).toFixed(6))),
   };
 }
 

@@ -154,6 +154,12 @@ test("media LLM so'rovlari formula, grafik, Graphviz va jadval uchun qisqa struk
   assert.match(flowPrompt, /generic to‘ldiruvchilar/);
   assert.match(flowPrompt, /Mavzu, bob va reja maqsadiga bevosita mos/);
   assert.match(flowPrompt, /2–5 node/);
+  const algorithmPrompt = mediaSlotPrompt({
+    slot_id: "ch1:flowchart:algorithm", type: "flowchart", diagram_type: "algorithm_flowchart", template_id: "algorithm_flowchart",
+    plan: { title: "Suv sifatini tekshirish", purpose: "Mezonni o‘lchash va zarur bo‘lsa tozalash" },
+  }, { topic: "Suv sifatini nazorat qilish", language: "o‘zbek" });
+  assert.match(algorithmPrompt, /1\.92 × 3\.45 dyuym/);
+  assert.match(algorithmPrompt, /yuqoridan pastga/);
   const chartPrompt = mediaSlotPrompt({ slot_id: "ch1:chart:1", type: "chart", chartType: "bar", plan: {} }, { topic: "Sinov", language: "uz" });
   assert.match(chartPrompt, /data_source maydonini bo'sh qoldir/i);
   assert.match(chartPrompt, /mavzu, reja va kontekstga mos hamda o'zaro izchil/);

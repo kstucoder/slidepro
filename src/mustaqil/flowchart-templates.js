@@ -25,7 +25,7 @@ const FLOWCHART_TEMPLATES = Object.freeze([
     description: "Standart boshlash/tugatish, amal va zarur qaror belgilariga ega yuqoridan pastga algoritm.",
     diagramType: "algorithm_flowchart",
     direction: "yuqoridan pastga, bajarilish tartibi bo‘yicha",
-    topologyGuidance: "Algoritmning mavzuga oid haqiqiy bajarilish amallarini qisqa yoz. Start node birinchi, end node oxirgi bo‘lsin; kiritish/chiqarish bo‘lsa parallelogram, hisoblash/amal bo‘lsa to‘rtburchak, shart faqat haqiqatan kerak bo‘lsa romb ishlat. Ixcham chizmada ko‘pi bilan bitta qaror tuguni bo‘lsin; undan chiqadigan aynan ikki shoxni Ha/Yo‘q yoki true/false deb belgila, keyingi amallarni qaror shoxlaridan tartibli pastga joyla. Ortiqcha, sakrab o‘tuvchi yoki bir-birini kesadigan qirralarni qo‘shma. Ko‘pi bilan 5 tugun; o‘qish yo‘nalishi yuqoridan pastga bo‘lsin.",
+    topologyGuidance: "Algoritmning mavzuga oid haqiqiy bajarilish amallarini qisqa yoz. Start node birinchi, end node oxirgi bo‘lsin; kiritish/chiqarish bo‘lsa parallelogram, hisoblash/amal bo‘lsa to‘rtburchak, shart faqat haqiqatan kerak bo‘lsa romb ishlat. Ixcham chizmada ko‘pi bilan bitta qaror tuguni bo‘lsin; undan chiqadigan aynan ikki shoxni Ha/Yo‘q yoki true/false deb belgila, keyingi amallarni qaror shoxlaridan tartibli pastga joyla. Ortiqcha, sakrab o‘tuvchi yoki bir-birini kesadigan qirralarni qo‘shma. Ko‘pi bilan 5 tugun; o‘qish yo‘nalishi yuqoridan pastga bo‘lsin. Word sahifasidagi yakuniy tasvirni 1.92 × 3.45 dyuymga mosla; matnlar shu ixcham maydonga sig‘sin va faqat mavzuga oid bo‘lsin.",
     allowedKinds: ["start", "end", "process", "decision", "input", "output"],
     nodeAttrs: {
       start: 'shape=ellipse, style="filled", fillcolor="#E4F2E5", color="#39724B", penwidth=1.5',
