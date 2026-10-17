@@ -370,25 +370,50 @@ test("subsectionlar 85% dan past yoki 115% dan yuqori bo'lsa diapazondan tashqar
   assert.deepEqual(evaluateWordTargets(above.chapters, above.outlineChapters, 200).outOfRangeSlots.map(slot => slot.sectionId), ["ch1_2"]);
 });
 
-test("umumiy samarali matn 85% va 115% chegaralarida qabul qilinadi, tashqarisida rad etiladi", () => {
-  const chapter = { id: "intro", title: "Kirish", role: "introduction", word_target: 100, sections: [] };
-  const outlineChapters = [{ ...chapter, content: undefined }];
-  for (const words of [85, 115]) {
-    const result = evaluateWordTargets([{ ...chapter, content: [countedParagraph(words, "kirish")] }], outlineChapters, 100);
-    assert.equal(result.totalAccepted, true);
-    assert.equal(result.accepted, true);
-  }
-  for (const words of [84, 116]) {
-    const result = evaluateWordTargets([{ ...chapter, content: [countedParagraph(words, "kirish")] }], outlineChapters, 100);
-    assert.equal(result.totalAccepted, false);
-    assert.equal(result.accepted, false);
+test("Kirish va Xulosa 60% dan boshlab qabul qilinadi, 60% dan kami yoki 115% dan pasti emas", () => {
+  for (const chapter of [
+    { id: "intro", title: "Kirish", role: "introduction" },
+    { id: "conclusion", title: "Xulosa", role: "conclusion" },
+  ]) {
+    const planned = { ...chapter, word_target: 100, sections: [] };
+    for (const words of [60, 85, 115]) {
+      const result = evaluateWordTargets([{ ...planned, content: [countedParagraph(words, "matn")] }], [planned], 100);
+      assert.equal(result.totalAccepted, true, `${chapter.title} ${words}% bo'lsa jami qabul qilinishi kerak`);
+      assert.equal(result.accepted, true);
+      assert.equal(result.outOfRangeSlots.length, 0);
+    }
+    for (const words of [59, 116]) {
+      const result = evaluateWordTargets([{ ...planned, content: [countedParagraph(words, "matn")] }], [planned], 100);
+      assert.equal(result.totalAccepted, false, `${chapter.title} ${words}% bo'lsa jami rad etilishi kerak`);
+      assert.equal(result.accepted, false);
+    }
   }
 });
 
-test("faqat 85% dan kam bo'lgan aniq kichik bo'lim qayta so'raladi", async () => {
+test("Kirishning 60% va boshqa slotning 85% minimumi birgalikda qabul qilinadi", () => {
+  const intro = { id: "intro", title: "Kirish", role: "introduction", word_target: 100, sections: [], content: [countedParagraph(60, "kirish")] };
+  const chapter = {
+    id: "ch1", title: "Tahlil", role: "analysis", word_target: 100,
+    sections: [{ id: "ch1_1", title: "Tahlil bo'limi", word_target: 100 }],
+    content: [
+      { type: "heading", level: 2, text: "1.1. Tahlil bo'limi" },
+      countedParagraph(85, "tahlil"),
+    ],
+  };
+  const outline = [
+    { id: "intro", title: "Kirish", role: "introduction", word_target: 100, sections: [] },
+    { id: "ch1", title: "Tahlil", role: "analysis", word_target: 100, sections: chapter.sections },
+  ];
+  const result = evaluateWordTargets([intro, chapter], outline, 200);
+  assert.equal(result.effectiveMinimumRatio, 0.725);
+  assert.equal(result.totalAccepted, true);
+  assert.equal(result.accepted, true);
+});
+
+test("faqat 85% dan kam bo'lgan aniq kichik bo'lim yetarli hajmgacha qayta so'raladi", async () => {
   const fixture = sectionRetryFixture([70, 100]);
   const calls = [];
-  const replacement = countedParagraph(90, "yangi-monitoring");
+  const responses = [countedParagraph(84, "qisqa-monitoring"), countedParagraph(90, "yangi-monitoring")];
   const retried = await retryDeficientTextSlots(fixture.chapters, fixture.outlineChapters, async slot => {
     calls.push(slot);
     const prompt = buildTextSlotRetryPrompt({
@@ -401,13 +426,15 @@ test("faqat 85% dan kam bo'lgan aniq kichik bo'lim qayta so'raladi", async () =>
     assert.match(prompt, /taxminan 110 so'z/);
     assert.match(prompt, /qabul oralig'i nominal maqsad bo'yicha 85–115 so'zligicha qoladi/i);
     assert.doesNotMatch(prompt, /Xavfni baholash/);
-    return [replacement];
+    return [responses.shift()];
   }, 1);
 
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   assert.equal(calls[0].kind, "section");
   assert.equal(calls[0].sectionId, "ch1_1");
   assert.equal(calls[0].title, "Monitoring mezonlari");
+  assert.equal(calls[1].retryAttempt, 2);
+  assert.equal(calls[1].actual, 84);
   assert.equal(retried.validation.accepted, true);
   assert.equal(retried.chapters[0].content.includes(fixture.firstHeading), true);
   assert.equal(retried.chapters[0].content.includes(fixture.secondHeading), true);
@@ -415,25 +442,23 @@ test("faqat 85% dan kam bo'lgan aniq kichik bo'lim qayta so'raladi", async () =>
   assert.equal(retried.chapters[0].content.includes(fixture.media), true);
 });
 
-test("ikkinchi urinishdan keyin ham kam subsection o'tkazib yuboriladi va eng yaxshi matn/media saqlanadi", async () => {
+test("kam subsection kerakli hajmga yetmaguncha retry qilinadi, skip qilinmaydi va media saqlanadi", async () => {
   const fixture = sectionRetryFixture([70, 100]);
   let attempts = 0;
   const retried = await retryDeficientTextSlots(fixture.chapters, fixture.outlineChapters, async slot => {
     attempts++;
     assert.equal(slot.sectionId, "ch1_1");
-    return [countedParagraph(84, "qisqa-retry")];
+    return [countedParagraph([84, 84, 85][attempts - 1], "qisqa-retry")];
   }, 1);
 
-  assert.equal(attempts, 1);
-  assert.equal(retried.skippedSlots.length, 1);
-  assert.equal(retried.skippedSlots[0].sectionId, "ch1_1");
-  assert.equal(retried.skippedSlots[0].actual, 84);
+  assert.equal(attempts, 3);
+  assert.deepEqual(retried.skippedSlots, []);
   assert.equal(retried.validation.underfilledSlots.length, 0);
   assert.equal(retried.validation.totalAccepted, true);
-  assert.equal(retried.validation.accepted, true, "ikkinchi urinish muvaffaqiyatsiz bo'lsa ham qolgan hujjat davom etadi");
-  assert.equal(retried.validation.totalWords, 184);
-  assert.equal(retried.validation.effectiveTotalWords, 100);
-  assert.equal(retried.validation.effectiveTotalTarget, 100);
+  assert.equal(retried.validation.accepted, true);
+  assert.equal(retried.validation.totalWords, 185);
+  assert.equal(retried.validation.effectiveTotalWords, 185);
+  assert.equal(retried.validation.effectiveTotalTarget, 200);
   const content = retried.chapters[0].content;
   assert.equal(content.includes(fixture.firstHeading), true);
   assert.equal(content.includes(fixture.secondHeading), true);
@@ -442,53 +467,91 @@ test("ikkinchi urinishdan keyin ham kam subsection o'tkazib yuboriladi va eng ya
   assert.equal(content.some(item => item.type === "paragraph" && item.text.includes("qisqa-retry")), true);
 });
 
-test("115% dan yuqori subsection retrydan keyin ham diapazondan tashqarida bo'lsa skip qilinib samarali jamidan chiqariladi", async () => {
+test("115% dan yuqori subsection 115% ichiga kirguncha retry qilinadi va skip qilinmaydi", async () => {
   const fixture = sectionRetryFixture([120, 100]);
   let attempts = 0;
   const retried = await retryDeficientTextSlots(fixture.chapters, fixture.outlineChapters, async slot => {
     attempts++;
     assert.equal(slot.sectionId, "ch1_1");
-    return [countedParagraph(116, "upper-retry")];
+    return [countedParagraph([116, 115][attempts - 1], "upper-retry")];
   }, 1);
 
-  assert.equal(attempts, 1);
-  assert.deepEqual(retried.skippedSlots.map(slot => [slot.sectionId, slot.actual]), [["ch1_1", 116]]);
+  assert.equal(attempts, 2);
+  assert.deepEqual(retried.skippedSlots, []);
   assert.equal(retried.chapters[0].content.some(item => item.type === "paragraph" && item.text.includes("upper-retry")), true,
-    "116 so'zlik retry 120 so'zlik asl variantdan nominal 115% chegarasiga yaqinroq");
+    "muvaffaqiyatli retry matni qo'llanadi");
   assert.equal(retried.chapters[0].content.includes(fixture.firstHeading), true);
   assert.equal(retried.chapters[0].content.includes(fixture.secondHeading), true);
   assert.equal(retried.chapters[0].content.includes(fixture.secondParagraph), true);
   assert.equal(retried.chapters[0].content.includes(fixture.media), true);
-  assert.equal(retried.validation.effectiveTotalWords, 100);
-  assert.equal(retried.validation.effectiveTotalTarget, 100);
+  assert.equal(retried.validation.effectiveTotalWords, 215);
+  assert.equal(retried.validation.effectiveTotalTarget, 200);
   assert.equal(retried.validation.totalAccepted, true);
   assert.equal(retried.validation.accepted, true);
 });
 
-test("retry dastlabki matndan qisqaroq bo'lsa eng yaxshi mavjud prose saqlanadi", async () => {
+test("retry natijasi qisqaroq bo'lsa eng yaxshi mavjud prose saqlanib, qabul oralig'igacha qayta so'raladi", async () => {
   const fixture = sectionRetryFixture([70, 100]);
-  const retried = await retryDeficientTextSlots(fixture.chapters, fixture.outlineChapters, async () => [countedParagraph(60, "bundan-qisqa")], 1);
+  let attempts = 0;
+  const retried = await retryDeficientTextSlots(fixture.chapters, fixture.outlineChapters, async slot => {
+    attempts++;
+    if (attempts === 1) return [countedParagraph(60, "bundan-qisqa")];
+    assert.equal(slot.actual, 70, "yomonroq retry best-matnni almashtirmasligi kerak");
+    return [countedParagraph(90, "yetarli-yangi")];
+  }, 1);
 
-  assert.deepEqual(retried.skippedSlots.map(slot => [slot.sectionId, slot.actual]), [["ch1_1", 70]]);
-  assert.equal(retried.chapters[0].content.includes(fixture.firstParagraph), true);
+  assert.equal(attempts, 2);
+  assert.deepEqual(retried.skippedSlots, []);
+  assert.equal(retried.chapters[0].content.includes(fixture.firstParagraph), false);
   assert.equal(retried.chapters[0].content.some(item => item.type === "paragraph" && item.text.includes("bundan-qisqa")), false);
+  assert.equal(retried.chapters[0].content.some(item => item.type === "paragraph" && item.text.includes("yetarli-yangi")), true);
   assert.equal(retried.chapters[0].content.includes(fixture.secondHeading), true);
   assert.equal(retried.chapters[0].content.includes(fixture.secondParagraph), true);
   assert.equal(retried.chapters[0].content.includes(fixture.media), true);
   assert.equal(retried.validation.accepted, true);
 });
 
-test("retrydan keyingi jami matn 85% dan kam bo'lsa rad etiladi", async () => {
-  const chapter = { id: "intro", title: "Kirish", role: "introduction", word_target: 100, sections: [], content: [countedParagraph(70, "kirish")] };
+test("Kirish va Xulosa 60% dan kam bo'lsa 60% ga yetguncha retry qilinadi", async () => {
+  const chapter = { id: "intro", title: "Kirish", role: "introduction", word_target: 100, sections: [], content: [countedParagraph(50, "kirish")] };
   const outlineChapters = [{ id: "intro", title: "Kirish", role: "introduction", word_target: 100, sections: [] }];
+  let attempts = 0;
   const retried = await retryDeficientTextSlots([chapter], outlineChapters, async slot => {
     assert.equal(slot.kind, "chapter");
-    return [countedParagraph(84, "qayta-kirish")];
+    attempts++;
+    assert.equal(slot.retryAttempt, attempts);
+    return [countedParagraph(60, "qayta-kirish")];
   }, 1);
 
-  assert.equal(retried.validation.totalWords, 84);
-  assert.equal(retried.validation.totalAccepted, false);
-  assert.equal(retried.validation.accepted, false);
+  assert.equal(attempts, 1);
+  assert.equal(retried.validation.totalWords, 60);
+  assert.equal(retried.validation.totalAccepted, true);
+  assert.equal(retried.validation.accepted, true);
+  assert.deepEqual(retried.skippedSlots, []);
+});
+
+test("boshqa bob 85% ga yetguncha qayta so'raladi", async () => {
+  const chapter = { id: "analysis", title: "Tahlil", role: "analysis", word_target: 100, sections: [], content: [countedParagraph(70, "tahlil")] };
+  const outlineChapters = [{ id: "analysis", title: "Tahlil", role: "analysis", word_target: 100, sections: [] }];
+  let attempts = 0;
+  const retried = await retryDeficientTextSlots([chapter], outlineChapters, async () => {
+    attempts++;
+    return [countedParagraph(attempts === 1 ? 84 : 85, "qayta-tahlil")];
+  }, 1);
+
+  assert.equal(attempts, 2);
+  assert.equal(retried.validation.totalWords, 85);
+  assert.equal(retried.validation.totalAccepted, true);
+  assert.equal(retried.validation.accepted, true);
+});
+
+test("matn sloti so'rovi xato bersa hajm loopi API xatosini yashirmaydi", async () => {
+  const fixture = sectionRetryFixture([70, 100]);
+  await assert.rejects(
+    retryDeficientTextSlots(fixture.chapters, fixture.outlineChapters, async () => {
+      throw new Error("API vaqtincha ishlamadi");
+    }, 1),
+    /API vaqtincha ishlamadi/,
+  );
 });
 
 test("slot retry boshqa subsection mazmuni va media obyektlarini o'zgartirmaydi", async () => {
@@ -504,27 +567,20 @@ test("slot retry boshqa subsection mazmuni va media obyektlarini o'zgartirmaydi"
   assert.deepEqual(content.slice(content.indexOf(fixture.secondHeading)), [fixture.secondHeading, fixture.secondParagraph]);
 });
 
-test("global 85% hisobi skipped slotni chiqaradi, ammo qolgan subsection uchun talabni saqlaydi", async () => {
+test("oddiy subsectionlar ichida yetishmagan slot ham alohida 85% gacha qayta so'raladi", async () => {
   const fixture = sectionRetryFixture([70, 84]);
+  const attempts = new Map();
   const retried = await retryDeficientTextSlots(fixture.chapters, fixture.outlineChapters, async slot => {
-    if (slot.sectionId === "ch1_1") return [countedParagraph(84, "skip-qisqa")];
-    return [countedParagraph(85, "qolgan-yetarli")];
+    const count = (attempts.get(slot.sectionId) || 0) + 1;
+    attempts.set(slot.sectionId, count);
+    return [countedParagraph(count === 1 ? 84 : 85, `yetarli-${slot.sectionId}`)];
   }, 1);
 
-  assert.deepEqual(retried.skippedSlots.map(slot => slot.sectionId), ["ch1_1"]);
-  assert.equal(retried.validation.totalWords, 169);
-  assert.equal(retried.validation.effectiveTotalWords, 85);
-  assert.equal(retried.validation.effectiveTotalTarget, 100);
+  assert.deepEqual(retried.skippedSlots, []);
+  assert.deepEqual([...attempts.values()], [2, 2]);
+  assert.equal(retried.validation.totalWords, 170);
+  assert.equal(retried.validation.effectiveTotalWords, 170);
+  assert.equal(retried.validation.effectiveTotalTarget, 200);
   assert.equal(retried.validation.totalAccepted, true);
   assert.equal(retried.validation.accepted, true);
-
-  const remainingShort = evaluateWordTargets(retried.chapters.map(chapter => ({
-    ...chapter,
-    content: chapter.content.map(item => item.type === "paragraph" && item.text.includes("qolgan-yetarli")
-      ? countedParagraph(84, "qolgan-yetarli")
-      : item),
-  })), fixture.outlineChapters, 200, WORD_ACCEPTANCE_RATIO, retried.skippedSlots);
-  assert.equal(remainingShort.totalAccepted, false, "qolgan subsection 85% dan past bo'lsa global mezon ham bajarilmagan hisoblanadi");
-  assert.deepEqual(remainingShort.underfilledSlots.map(slot => slot.sectionId), ["ch1_2"]);
-  assert.equal(remainingShort.accepted, false);
 });

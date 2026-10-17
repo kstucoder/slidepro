@@ -730,7 +730,29 @@ function buildVerifiedImageCache(chapters, mediaResults) {
 
 const WORD_ACCEPTANCE_RATIO = 0.85;
 const WORD_MAX_ACCEPTANCE_RATIO = 1.15;
+const INTRO_CONCLUSION_WORD_ACCEPTANCE_RATIO = 0.60;
 const RETRY_WORD_BUFFER_RATIO = 1.1;
+
+function isIntroConclusionSlot(slot) {
+  const role = String(slot?.chapterRole || "").trim().toLowerCase();
+  const id = String(slot?.chapterId || "").trim().toLowerCase();
+  const title = String(slot?.chapterTitle || "").trim().toLowerCase();
+  return ["introduction", "conclusion"].includes(role)
+    || ["intro", "conclusion"].includes(id)
+    || /^(kirish|xulosa)$/.test(title);
+}
+
+function minimumWordAcceptanceRatio(slot, minimumRatio = WORD_ACCEPTANCE_RATIO) {
+  return isIntroConclusionSlot(slot)
+    ? Math.min(minimumRatio, INTRO_CONCLUSION_WORD_ACCEPTANCE_RATIO)
+    : minimumRatio;
+}
+
+function wordRangeDescription(slot, minimumRatio = WORD_ACCEPTANCE_RATIO, maximumRatio = WORD_MAX_ACCEPTANCE_RATIO) {
+  const minimum = Math.ceil(slot.target * minimumWordAcceptanceRatio(slot, minimumRatio) - 1e-9);
+  const maximum = Math.floor(slot.target * maximumRatio + 1e-9);
+  return `${slot.title} (${slot.actual}/${slot.target}; talab ${minimum}–${maximum} so'z)`;
+}
 
 function sectionContentGroups(chapter, content, mainNumber) {
   const sections = Array.isArray(chapter?.sections) ? chapter.sections : [];
@@ -766,6 +788,9 @@ function getTextWordSlots(chapters, outlineChapters) {
           kind: "section",
           chapterIndex,
           sectionIndex,
+          chapterRole: planned.role || chapter?.role || "",
+          chapterId: planned.id || chapter?.id || "",
+          chapterTitle: planned.title || chapter?.title || "",
           sectionId: section.id || `${planned.id || `chapter-${chapterIndex + 1}`}_${sectionIndex + 1}`,
           title: section.title || `Bo'lim ${sectionIndex + 1}`,
           target: Number(section.word_target) || 0,
@@ -782,6 +807,9 @@ function getTextWordSlots(chapters, outlineChapters) {
         kind: "chapter",
         chapterIndex,
         sectionIndex: null,
+        chapterRole: planned.role || chapter?.role || "",
+        chapterId: planned.id || chapter?.id || "",
+        chapterTitle: planned.title || chapter?.title || "",
         sectionId: planned.id || `chapter-${chapterIndex + 1}`,
         title: planned.title || chapter?.title || `Qism ${chapterIndex + 1}`,
         target,
@@ -807,18 +835,27 @@ function evaluateWordTargets(chapters, outlineChapters, totalTarget, minimumRati
   const excludedTarget = excludedSlots.reduce((sum, slot) => sum + slot.target, 0);
   const effectiveTotalWords = Math.max(0, totalWords - excludedWords);
   const effectiveTotalTarget = Math.max(0, plannedTotal - excludedTarget);
+  const toleratedShortfall = allSlots
+    .filter(slot => !skippedKeys.has(textWordSlotKey(slot)))
+    .reduce((sum, slot) => sum + slot.target * (minimumRatio - minimumWordAcceptanceRatio(slot, minimumRatio)), 0);
+  const effectiveMinimumRatio = effectiveTotalTarget > 0
+    ? Math.max(0, (effectiveTotalTarget * minimumRatio - toleratedShortfall) / effectiveTotalTarget)
+    : minimumRatio;
   const outOfRangeSlots = allSlots
-    .filter(slot => !skippedKeys.has(textWordSlotKey(slot)) && slot.target > 0 && (slot.actual / slot.target < minimumRatio || slot.actual / slot.target > maximumRatio));
+    .filter(slot => !skippedKeys.has(textWordSlotKey(slot)) && slot.target > 0
+      && (slot.actual / slot.target < minimumWordAcceptanceRatio(slot, minimumRatio) || slot.actual / slot.target > maximumRatio));
   const underfilledSlots = allSlots
-    .filter(slot => !skippedKeys.has(textWordSlotKey(slot)) && slot.target > 0 && slot.actual < slot.target * minimumRatio);
+    .filter(slot => !skippedKeys.has(textWordSlotKey(slot)) && slot.target > 0
+      && slot.actual < slot.target * minimumWordAcceptanceRatio(slot, minimumRatio));
   const effectiveRatio = effectiveTotalTarget > 0 ? effectiveTotalWords / effectiveTotalTarget : 1;
-  const totalAccepted = effectiveTotalTarget <= 0 || (effectiveRatio >= minimumRatio && effectiveRatio <= maximumRatio);
+  const totalAccepted = effectiveTotalTarget <= 0 || (effectiveRatio >= effectiveMinimumRatio && effectiveRatio <= maximumRatio);
   return {
     totalWords,
     totalTarget: plannedTotal,
     effectiveTotalWords,
     effectiveTotalTarget,
     minimumRatio,
+    effectiveMinimumRatio,
     maximumRatio,
     totalAccepted,
     outOfRangeSlots,
@@ -835,7 +872,7 @@ function buildTextSlotRetryPrompt({ slot, chapter, outline, language, sourceCont
   const current = String(slot.currentText || "").slice(0, 7000);
   const slotName = slot.kind === "section" ? "ichki reja bandi" : "mustaqil matn qismi";
   const retryTarget = Math.ceil(slot.target * RETRY_WORD_BUFFER_RATIO - 1e-9);
-  const minimumAccepted = Math.ceil(slot.target * WORD_ACCEPTANCE_RATIO - 1e-9);
+  const minimumAccepted = Math.ceil(slot.target * minimumWordAcceptanceRatio(slot) - 1e-9);
   const maximumAccepted = Math.floor(slot.target * WORD_MAX_ACCEPTANCE_RATIO + 1e-9);
   return `Faqat bitta matn slotini to'liq qayta yoz: boshqa bob, bo'lim yoki media yaratma.
 Ish: "${outline?.meta?.title || chapter?.title || "Mavzu"}". Til: ${language || "o'zbek"}.
@@ -902,34 +939,46 @@ function replaceTextSlot(chapters, slot, replacement) {
 async function retryDeficientTextSlots(chapters, outlineChapters, retry, concurrency = boundedConcurrency()) {
   const deficient = evaluateWordTargets(chapters, outlineChapters, 0).outOfRangeSlots;
   const results = await mapWithConcurrency(deficient, concurrency, async slot => {
-    try {
-      return { slot, content: await retry(slot) };
-    } catch (error) {
-      console.warn(`[mustaqil] matn slot ${slot.sectionId} qayta urinishda xato: ${error.message}`);
-      return { slot, content: [] };
+    let bestContent = null;
+    let bestWords = slot.actual;
+    let bestText = slot.currentText;
+    let attempt = 0;
+    const distanceFromAcceptanceRange = words => {
+      const minimumRatio = minimumWordAcceptanceRatio(slot);
+      const ratio = words / slot.target;
+      const minimum = slot.target * minimumRatio;
+      const maximum = slot.target * WORD_MAX_ACCEPTANCE_RATIO;
+      return ratio < minimumRatio ? minimum - words : ratio > WORD_MAX_ACCEPTANCE_RATIO ? words - maximum : 0;
+    };
+
+    while (distanceFromAcceptanceRange(bestWords) > 0) {
+      attempt++;
+      let content;
+      try {
+        content = await retry({ ...slot, actual: bestWords, currentText: bestText, retryAttempt: attempt });
+      } catch (error) {
+        console.warn(`[mustaqil] matn slot ${slot.sectionId} qayta urinish ${attempt} xato: ${error.message}`);
+        throw error;
+      }
+
+      const retryWords = countWords(content);
+      if (retryWords > 0 && distanceFromAcceptanceRange(retryWords) < distanceFromAcceptanceRange(bestWords)) {
+        bestContent = content;
+        bestWords = retryWords;
+        bestText = (content || []).filter(item => item?.type === "paragraph")
+          .map(item => String(item.text || "")).join("\n\n");
+      } else {
+        const delay = Math.min(1000 * (2 ** Math.min(attempt - 1, 5)), 30000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
+    return { slot, content: bestContent };
   });
   let merged = chapters;
   for (const result of results) {
-    const retryWords = countWords(result.content);
-    const distanceFromAcceptanceRange = words => {
-      const ratio = words / result.slot.target;
-      const minimum = result.slot.target * WORD_ACCEPTANCE_RATIO;
-      const maximum = result.slot.target * WORD_MAX_ACCEPTANCE_RATIO;
-      return ratio < WORD_ACCEPTANCE_RATIO ? minimum - words : ratio > WORD_MAX_ACCEPTANCE_RATIO ? words - maximum : 0;
-    };
-    // Prefer whichever version is closer to the nominal acceptance range; this
-    // lets an overlong subsection improve without replacing a better short draft.
-    if (retryWords > 0 && distanceFromAcceptanceRange(retryWords) < distanceFromAcceptanceRange(result.slot.actual)) {
-      merged = replaceTextSlot(merged, result.slot, result.content);
-    }
+    if (result.content?.length) merged = replaceTextSlot(merged, result.slot, result.content);
   }
-  const postRetryValidation = evaluateWordTargets(merged, outlineChapters, 0);
-  const attemptedKeys = new Set(deficient.map(textWordSlotKey));
-  const skippedSlots = postRetryValidation.outOfRangeSlots.filter(slot => slot.kind === "section" && attemptedKeys.has(textWordSlotKey(slot)));
-  for (const slot of skippedSlots) {
-    console.warn(`[mustaqil] subsection slot ${slot.sectionId} (${slot.title}) retrydan so'ng ham 85–115% oralig'idan tashqarida (${slot.actual}/${slot.target}); eng yaxshi mavjud matn saqlandi va faqat shu slotning qat'iy so'z talabi o'tkazib yuborildi.`);
-  }
+  const skippedSlots = [];
   return {
     chapters: merged,
     attemptedSlots: deficient,
@@ -1280,7 +1329,7 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   const initialFillPct = totalWt > 0 ? initialWordValidation.totalWords / totalWt : 1;
   console.log("[mustaqil] so'z:", `${initialWordValidation.totalWords}/${totalWt} (${Math.round(initialFillPct * 100)}%)`);
   if (initialWordValidation.outOfRangeSlots.length) {
-    console.log("[mustaqil] 85–115% oralig'idan tashqaridagi matn slotlari qayta so'raladi:", initialWordValidation.outOfRangeSlots.map(slot => `${slot.title} (${slot.actual}/${slot.target})`).join(" | "));
+    console.log("[mustaqil] Qabul oralig'idan tashqaridagi matn slotlari qayta so'raladi:", initialWordValidation.outOfRangeSlots.map(slot => wordRangeDescription(slot)).join(" | "));
     const retryResult = await retryDeficientTextSlots(chapters, outline.chapters, async slot => {
       const chapter = chapters[slot.chapterIndex];
       const text = await callLLM({
@@ -1297,15 +1346,15 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
     });
     chapters = retryResult.chapters;
     skippedTextSlots = retryResult.skippedSlots;
-    console.log("[mustaqil] slot retry yakuni:", `${retryResult.validation.effectiveTotalWords}/${retryResult.validation.effectiveTotalTarget} samarali so'z`, `(${retryResult.skippedSlots.length} ta subsection qat'iy so'z talabi o'tkazib yuborildi; ${retryResult.validation.outOfRangeSlots.length} ta boshqa slot 85–115% oralig'idan tashqarida)`);
+    console.log("[mustaqil] slot retry yakuni:", `${retryResult.validation.effectiveTotalWords}/${retryResult.validation.effectiveTotalTarget} samarali so'z`, `(${retryResult.skippedSlots.length} ta slot skip qilindi; ${retryResult.validation.outOfRangeSlots.length} ta slot qabul oralig'idan tashqarida)`);
   }
 
   const finalWordValidation = evaluateWordTargets(chapters, outline.chapters, totalWt, WORD_ACCEPTANCE_RATIO, skippedTextSlots);
   const finalWords = finalWordValidation.totalWords;
   if (!finalWordValidation.accepted) {
-    const deficient = finalWordValidation.outOfRangeSlots.map(slot => `${slot.title} (${slot.actual}/${slot.target})`);
+    const deficient = finalWordValidation.outOfRangeSlots.map(slot => wordRangeDescription(slot));
     if (!finalWordValidation.totalAccepted) deficient.unshift(`umumiy matn ${finalWordValidation.effectiveTotalWords}/${finalWordValidation.effectiveTotalTarget} samarali so'z (aslida ${finalWords}/${totalWt})`);
-    throw new Error(`Mustaqil ish matni 85–115% qabul oralig'idan tashqarida (${finalWords}/${totalWt} so'z; muammoli slotlar: ${deficient.join(", ") || "umumiy kontent"}).`);
+    throw new Error(`Mustaqil ish matni qabul oralig'idan tashqarida (oddiy slotlar 85–115%, Kirish/Xulosa 60–115%; ${finalWords}/${totalWt} so'z; muammoli slotlar: ${deficient.join(", ") || "umumiy kontent"}).`);
   }
 
   chapters = chapters.map((ch, i) => ({
@@ -1314,9 +1363,9 @@ async function generateMustaqilIsh({ topic, pages, language, studentName, studen
   }));
   const postClampWordValidation = evaluateWordTargets(chapters, outline.chapters, totalWt, WORD_ACCEPTANCE_RATIO, skippedTextSlots);
   if (!postClampWordValidation.accepted) {
-    const details = postClampWordValidation.outOfRangeSlots.map(slot => `${slot.title} (${slot.actual}/${slot.target})`);
+    const details = postClampWordValidation.outOfRangeSlots.map(slot => wordRangeDescription(slot));
     if (!postClampWordValidation.totalAccepted) details.unshift(`umumiy matn ${postClampWordValidation.effectiveTotalWords}/${postClampWordValidation.effectiveTotalTarget} samarali so'z`);
-    throw new Error(`DOCX oldidan matn 85–115% qabul oralig'idan chiqib ketdi: ${details.join(", ") || "umumiy kontent"}.`);
+    throw new Error(`DOCX oldidan matn qabul oralig'idan chiqib ketdi (oddiy slotlar 85–115%, Kirish/Xulosa 60–115%): ${details.join(", ") || "umumiy kontent"}.`);
   }
   const budgetedWords = chapters.reduce((sum, chapter) => sum + countWords(chapter.content), 0);
   console.log("[mustaqil] Word matn byudjeti:", budgetedWords + "/" + totalWt);
