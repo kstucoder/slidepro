@@ -4,7 +4,6 @@ const path = require("path");
 const { Bot, session, InlineKeyboard, Keyboard, InputFile } = require("grammy");
 const { config, assertConfig } = require("./config");
 const db = require("./db");
-const { requiresStudentDetails } = require("./order-flow");
 const { calcPrice, calcMustaqilPrice, currency, formatAmount } = require("./pricing");
 const { extractText, cleanText } = require("./content/extract");
 const fulfill = require("./payments/fulfill");
@@ -25,7 +24,6 @@ function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;"
 const isSuperAdmin = (id) => config.adminIds.includes(id);
 const isAdmin = (id) => isSuperAdmin(id) || db.isDbAdmin(id);
 const isFree = (id) => isAdmin(id) || db.isFreeUser(id);
-const needsStudentDetails = (id) => requiresStudentDetails({ isAdmin: isAdmin(id), isVip: db.isFreeUser(id) });
 
 // ── MENYULAR ───────────────────────────────────────────────
 function mainMenu(id) {
@@ -123,10 +121,9 @@ bot.hears("ℹ️ Yordam", async (ctx) => {
   await ctx.reply(
     "ℹ️ <b>Qanday ishlaydi:</b>\n\n"+
     "🎨 <b>Taqdimot</b> (.pptx):\n"+
-    "  Mavzu → Slaydlar soni → Ism+Guruh (oddiy foydalanuvchilar uchun) → Kontent → To'lov → Fayl\n\n"+
+    "  Mavzu → Sahifa soni → Kontent → To'lov → Fayl\n\n"+
     "📝 <b>Mustaqil ish</b> (.docx, GOST formati):\n"+
-    "  Mavzu → Sahifalar → Til → Ism+Guruh (oddiy foydalanuvchilar uchun) → Kontent → To'lov → Fayl\n\n"+
-    "Adminlar va VIP foydalanuvchilardan ism-guruh so'ralmaydi.\n"+
+    "  Mavzu → Sahifalar → Til → Ism+Guruh → Kontent → To'lov → Fayl\n\n"+
     "📌 Formulalar, grafiklar, jadvallar avtomatik qo'shiladi.\n\n"+
     "/cancel — bekor qilish\n/id — Telegram ID",
     { parse_mode:"HTML" }
@@ -322,8 +319,9 @@ bot.callbackQuery(/^slides:(.+)$/, async (ctx) => {
     return ctx.reply("Sahifa sonini yozing ("+config.minSlides+"–"+config.maxSlides+"):");
   }
   ctx.session.draft.slides = parseInt(val, 10);
+  ctx.session.step = "await_student_name";
   await ctx.editMessageText("✅ Sahifa soni: "+val);
-  await askStudentDetailsOrContinue(ctx);
+  await ctx.reply("👤 Ismingizni kiriting (F.I.Sh. formatida):\n\n<i>Masalan: Toshmatov Jasur Hamidovich</i>", { parse_mode:"HTML" });
 });
 
 // Til tanlash (mustaqil ish)
@@ -332,8 +330,9 @@ bot.callbackQuery(/^lang:(uz|ru|en)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const langMap = { uz:"o'zbek", ru:"rus", en:"ingliz" };
   ctx.session.draft.language = langMap[ctx.match[1]];
+  ctx.session.step = "await_student_name";
   await ctx.editMessageText("✅ Til: "+langMap[ctx.match[1]]);
-  await askStudentDetailsOrContinue(ctx);
+  await ctx.reply("👤 Ismingizni kiriting (F.I.Sh.):\n\n<i>Masalan: Toshmatov Jasur Hamidovich</i>", { parse_mode:"HTML" });
 });
 
 // Kontent tanlash
@@ -360,17 +359,6 @@ async function askContent(ctx) {
     "• <b>AI yozsin</b> — mavzudan avtomatik yaratiladi",
     { parse_mode:"HTML", reply_markup: contentInline() }
   );
-}
-async function continueWithoutStudentDetails(ctx) {
-  ctx.session.draft.studentName = "";
-  ctx.session.draft.studentGroup = "";
-  ctx.session.step = "await_content_choice";
-  return askContent(ctx);
-}
-async function askStudentDetailsOrContinue(ctx) {
-  if (!needsStudentDetails(ctx.from.id)) return continueWithoutStudentDetails(ctx);
-  ctx.session.step = "await_student_name";
-  return ctx.reply("👤 Ismingizni kiriting (F.I.Sh.):\n\n<i>Masalan: Toshmatov Jasur Hamidovich</i>", { parse_mode:"HTML" });
 }
 
 // ── MATN KIRITISH ──────────────────────────────────────────
@@ -406,19 +394,18 @@ bot.on("message:text", async (ctx) => {
     if (!Number.isFinite(n)||n<config.minSlides||n>config.maxSlides)
       return ctx.reply("Iltimos "+config.minSlides+"–"+config.maxSlides+" oralig'ida son kiriting.");
     ctx.session.draft.slides = n;
+    ctx.session.step = "await_student_name";
     await ctx.reply("✅ Sahifa soni: "+n);
-    return askStudentDetailsOrContinue(ctx);
+    return ctx.reply("👤 Ismingizni kiriting (F.I.Sh.):", { parse_mode:"HTML" });
   }
 
   if (step === "await_student_name") {
-    if (!needsStudentDetails(ctx.from.id)) return continueWithoutStudentDetails(ctx);
     ctx.session.draft.studentName = text;
     ctx.session.step = "await_student_group";
     return ctx.reply("🎓 Guruhingizni kiriting:\n\n<i>Masalan: 21-MTI-1 yoki AT-22</i>", { parse_mode:"HTML" });
   }
 
   if (step === "await_student_group") {
-    if (!needsStudentDetails(ctx.from.id)) return continueWithoutStudentDetails(ctx);
     ctx.session.draft.studentGroup = text;
     ctx.session.step = "await_content_choice";
     await ctx.reply("✅ "+esc(ctx.session.draft.studentName)+" — "+esc(text));

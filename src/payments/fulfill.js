@@ -9,7 +9,6 @@ const { InputFile } = require("grammy");
 const { getOrder, updateOrder, getSetting, getCache, setCache } = require("../db");
 const { generatePresentation } = require("../generator/build");
 const { generateMustaqilIsh } = require("../mustaqil/generate");
-const { startPaymentStatus } = require("./mustaqil-progress");
 const { config } = require("../config");
 
 let _bot = null;
@@ -58,8 +57,9 @@ async function fulfillOrder(orderId) {
   }
 
   // 2) YANGI GENERATSIYA
-  let progress = null;
-  try { progress = await startPaymentStatus(_bot.api, order); } catch (_) {}
+  try {
+    await _bot.api.sendMessage(order.user_tg_id, "✅ To'lov tasdiqlandi! Taqdimotingiz tayyorlanmoqda, biroz kuting...");
+  } catch (e) {}
 
   const outDir = path.join(__dirname, "..", "..", "output");
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -75,8 +75,7 @@ async function fulfillOrder(orderId) {
     if (isMustaqil) {
       res = await generateMustaqilIsh({ topic: order.topic, pages: order.pages || 15,
         language: "o\'zbek", studentName: order.student_name || "", studentGroup: order.student_group || "",
-        org: "", supervisor: "", sourceContent: order.content_text || "", llm: llmCfg, outFile,
-        onProgress: ({ percent, phase }) => progress?.update(percent, phase) });
+        org: "", supervisor: "", sourceContent: order.content_text || "", llm: llmCfg, outFile });
       res.slideCount = order.pages || 15;
     } else {
       res = await generatePresentation({ topic: order.topic, slides: order.slides,
@@ -115,7 +114,6 @@ async function fulfillOrder(orderId) {
       userSent = await _bot.api.sendDocument(order.user_tg_id, new InputFile(outFile), { caption: `${caption}\n\nBuyurtmangiz uchun rahmat!` });
       fileId = userSent.document && userSent.document.file_id;
     }
-    if (isMustaqil && progress) await progress.complete();
 
     // 5) KESHGA SAQLASH
     if (fileId) {
@@ -128,11 +126,8 @@ async function fulfillOrder(orderId) {
   } catch (e) {
     updateOrder(orderId, { status: "failed" });
     console.error(`[fulfill] #${orderId} GENERATSIYA XATOSI:`, e.message);
-    if (progress) await progress.fail(e.message);
     try {
-      await _bot.api.sendMessage(order.user_tg_id, isMustaqil
-        ? "⚠️ Mustaqil ishni tayyorlashda xatolik yuz berdi. Administrator bilan bog'laning."
-        : "⚠️ Taqdimot yaratishda xatolik yuz berdi. Administrator bilan bog'laning.");
+      await _bot.api.sendMessage(order.user_tg_id, "⚠️ Taqdimot yaratishda xatolik yuz berdi. Administrator bilan bog'laning.");
     } catch (_) {}
     notifyAdmins(`❌ Buyurtma #${orderId} generatsiyada xato: ${e.message}`);
   }
